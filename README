@@ -4,7 +4,7 @@ Bayesian Network inference engine written by Olivier Chafik, which features :
 - attractive Swing user interface with mouse-over effects, movable and expandable nodes
 - custom graph library
 
-This project was previously not open-source, but after a request from Cedrick Beler I agreed to release it under the MIT License (to make it possible to port the library to Smalltalk).
+This project was previously not open-source, but after a request from Cedrick Beler (ENIT, France) I agreed to release it under the MIT License (to make it possible to port the library to Smalltalk).
 
 Blog posts about this (old) project :
 - "Yet Another Bayesian Network Library
