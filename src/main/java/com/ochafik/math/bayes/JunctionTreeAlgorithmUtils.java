@@ -227,7 +227,7 @@ public class JunctionTreeAlgorithmUtils {
 		
 		// Normalize each clique's potential
 		for (Map.Entry<Integer, Function<Variable>> e : cliquePotentials.entrySet())
-			e.setValue(Functions.normalize(e.getValue(), 1));//, "{clique" + nodeSetList.get(e.getKey()) + " = f" + e.getValue().getArgumentNames()+"}"));
+			cliquePotentials.put(e.getKey(), Functions.normalize(e.getValue(), 1));//, "{clique" + nodeSetList.get(e.getKey()) + " = f" + e.getValue().getArgumentNames()+"}"));
 		
 		
 		// Get all the potentials by clique / separator and marginalize them for each variable. Store the result by variable

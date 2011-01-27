@@ -21,3 +21,11 @@ Blog posts about this (old) project :
 	http://ochafik.com/blog/?p=58
 - "A decent graph display (at last !)"
 	http://ochafik.com/blog/?p=60
+	
+To build :
+- install sbt (http://code.google.com/p/simple-build-tool/wiki/Setup)
+- clone this repo :
+	git clone git@github.com:ochafik/nabab.git
+- build with sbt :
+	cd nabab && sbt update compile
+- 
