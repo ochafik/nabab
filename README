@@ -24,6 +24,7 @@ Blog posts about this (old) project :
 	
 To build :
 - install sbt (http://code.google.com/p/simple-build-tool/wiki/Setup)
+- install git (http://git-scm.com/)
 - clone this repo :
 	git clone git@github.com:ochafik/nabab.git
 - build with sbt :
