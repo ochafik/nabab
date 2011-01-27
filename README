@@ -28,4 +28,5 @@ To build :
 	git clone git@github.com:ochafik/nabab.git
 - build with sbt :
 	cd nabab && sbt update compile
-- 
+- run (choose the Baya main class) :
+	sbt run
