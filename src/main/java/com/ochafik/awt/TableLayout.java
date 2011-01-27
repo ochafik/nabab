@@ -1,3 +1,25 @@
+/*
+ * Copyright (C) 2011 by Olivier Chafik (http://ochafik.com)
+ * 
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ * 
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ * 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+
 package com.ochafik.awt;
 import java.awt.Button;
 import java.awt.Component;
@@ -390,15 +412,15 @@ public class TableLayout
 				if (refuseRemains[i]) sizesResult[i]=preferredSize;
 				else { // distribution :
 					int distributed= amountToDistribute==0 ? 
-						0 : //rien à distribuer
+						0 : //rien a distribuer
 						((i==lastRemainsAgreement) ? 
-							stillRemainingToDistribute : // le dernier à accepter la distribution emporte tout 
+							stillRemainingToDistribute : // le dernier a accepter la distribution emporte tout 
 								remainsAgreeingDependingTotal == 0 ? 0 : (preferredSize*amountToDistribute)/remainsAgreeingDependingTotal); // sinon, distribution proportionnelle
 					stillRemainingToDistribute-=distributed;
 					sizesResult[i]=preferredSize+distributed;
 				}
 			} 
-	    //} else { // il faut revoir les espErances à la baisse... mais pas en deça des minima !
+	    //} else { // il faut revoir les espErances a la baisse... mais pas en deca des minima !
 		    
 	    //}
     }

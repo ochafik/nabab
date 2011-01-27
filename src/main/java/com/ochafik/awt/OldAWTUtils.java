@@ -1,3 +1,25 @@
+/*
+ * Copyright (C) 2011 by Olivier Chafik (http://ochafik.com)
+ * 
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ * 
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ * 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+
 package com.ochafik.awt;
 
 import java.awt.BorderLayout;
@@ -68,7 +90,7 @@ public class OldAWTUtils {
 						//throw ex;
 					}
 				} catch (RuntimeException ex) {
-					//run n'a pas voulu entériner la fermeture !
+					//run n'a pas voulu enteriner la fermeture !
 				}
 			}});
 	}
@@ -84,7 +106,7 @@ public class OldAWTUtils {
 					if (run!=null) run.run();
 					f.setVisible(false);
 				} catch (RuntimeException ex) {
-					//run n'a pas voulu entériner la fermeture !
+					//run n'a pas voulu enteriner la fermeture !
 				}
 			}});
 	}
@@ -232,7 +254,7 @@ public class OldAWTUtils {
 					comp=new ImageComponent((Image)oComp);
 				} else comp=new TextLabels(oComp.toString());
 
-				//si aucun Buttons spécifié, le deviner au cas où...
+				//si aucun Buttons specifie, le deviner au cas ou...
 				if (comp instanceof Buttons) buttons=(Buttons)comp;
 				if (s==null) c.add(comp);
 				else  c.add(comp,s);

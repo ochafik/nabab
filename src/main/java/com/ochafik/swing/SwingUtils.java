@@ -1,3 +1,25 @@
+/*
+ * Copyright (C) 2011 by Olivier Chafik (http://ochafik.com)
+ * 
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ * 
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ * 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+
 package com.ochafik.swing;
 
 import java.awt.CardLayout;
@@ -76,7 +98,7 @@ public class SwingUtils {
 							if (p.getComponent(i)==c) {
 								trouve=true;
 								//System.out.println(i);
-								// ainsi on connait l'index de la carte. on va donc partir de la première et faire des "next(p)" le nombre de fois qu'il faut.
+								// ainsi on connait l'index de la carte. on va donc partir de la premiere et faire des "next(p)" le nombre de fois qu'il faut.
 								CardLayout cl=(CardLayout)man;
 								cl.first(p);
 								for (int j=0;j<i;j++) {
@@ -86,7 +108,7 @@ public class SwingUtils {
 							}
 						}
 						//System.out.print(" "+trouve);
-					} //else System.out.print(" VISIBLE");// sinon la carte est dEjà affichEe !!!
+					} //else System.out.print(" VISIBLE");// sinon la carte est deja affichEe !!!
 					//System.out.println();
 				}
 				if (p instanceof Window) {
