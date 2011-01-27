@@ -1,0 +1,117 @@
+package com.ochafik.util;
+
+import java.util.ArrayList;
+
+public class SortedIntObjectMap<V> {
+	public interface IntObjectVisitor<V> {
+		public boolean visit(int i, V v);
+	}
+	
+	private static final class SortedIntVector extends IntVector implements SortedIntArray {
+		public SortedIntVector(int c) {
+			super(c);
+		}
+	};
+	private final SortedIntVector keys;
+	private final ArrayList<V> values;
+	int lastKeyIndex = -1;
+	
+	public SortedIntObjectMap() {
+		this(10);
+	}
+	public SortedIntObjectMap(int capacity) {
+		keys = new SortedIntVector(capacity);
+		values = new ArrayList<V>(capacity);
+	}
+	
+	public SortedIntObjectMap<V> clone() {
+		int size = size();
+		SortedIntObjectMap<V> clone = new SortedIntObjectMap<V>(size);
+		for (int i = 0; i < size; i++) {
+			clone.keys.add(keys.get(i));
+			clone.values.add(values.get(i));
+		}
+		return clone;
+	}
+	public SortedIntArray getKeys() {
+		return keys;
+	}
+	
+	public void put(int key, V value) {
+		int i;
+		if ((lastKeyIndex == -1) || (keys.get(i = lastKeyIndex) != key))
+			i = BinarySearchUtils.binarySearch(keys.getBackingArray(), key, 0, size());
+		
+		if (i >= 0) {
+			values.set(i,value);
+		} else {
+			keys.insert(i = ((-i) - 1), key);
+			values.add(i, value);
+		}
+		lastKeyIndex = i;
+	}
+	
+	public V get(int key) {
+		int i;
+		if ((lastKeyIndex == -1) || (keys.get(i = lastKeyIndex) != key))
+			i = BinarySearchUtils.binarySearch(keys.getBackingArray(), key, 0, size());
+		
+		if (i >= 0) {
+			assert keys.get(i) == key;
+			lastKeyIndex = i;
+			return values.get(i);
+		}
+		return null;
+	}
+	
+	public boolean remove(int value) {
+		int i;
+		if ((lastKeyIndex == -1) || (keys.get(i = lastKeyIndex) != value))
+			i = BinarySearchUtils.binarySearch(keys.getBackingArray(), value, 0, size());
+		
+		if (i >= 0) {
+			lastKeyIndex = -1;
+			keys.remove(i);
+			values.remove(i);
+			return true;
+		} else {
+			return false;
+		}
+	}
+	
+	public boolean containsKey(int value) {
+		return BinarySearchUtils.binarySearch(keys.getBackingArray(), value, 0, size()) >= 0;
+	}
+	
+	public int indexOf(int value) {
+		return BinarySearchUtils.binarySearch(keys.getBackingArray(), value, 0, size());
+	}
+	
+	public boolean isEmpty() {
+		return keys.isEmpty();
+	}
+	
+	public void clear() {
+		keys.clear();
+		values.clear();
+	}
+	
+	public int size() {
+		return keys.size();
+	}
+	
+	
+	public boolean visit(final IntObjectVisitor<V> visitor) {
+		for (int i = 0, len = size(); i < len; i++) {
+			if (!visitor.visit(keys.get(i), values.get(i))) {
+				return false;
+			}
+		}
+		return true;
+	}
+	public void ensureCapacity(int vertices) {
+		keys.ensureCapacity(vertices);
+		values.ensureCapacity(vertices);
+	}
+
+}
