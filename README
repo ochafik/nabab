@@ -1,0 +1,23 @@
+Bayesian Network inference engine, which features :
+- ability to read bayesian networks from files in the XMLBIF 0.3 format
+- inference engine that uses the junction tree algorithm and knows about observations
+- attractive Swing user interface with mouse-over effects, movable and expandable nodes (does not let you enter observations yet… work in progress)
+- custom graph library
+
+This project was previously not open-source, but after a request from Cédrick Béler I agreed to release it under the MIT License (to make it possible to port the library to Smalltalk).
+
+Blog posts about this (old) project :
+- "Yet Another Bayesian Network Library
+	http://ochafik.com/blog/?p=43
+- "Graphs : minimal junction tree"
+	http://ochafik.com/blog/?p=46
+- "Graph library optimizations"
+	http://ochafik.com/blog/?p=52
+- "Graph display heuristics..."
+	http://ochafik.com/blog/?p=54
+- "Bayesian Networks : now able to open files"
+	http://ochafik.com/blog/?p=55
+- "Slight UI update for likelihood tables"
+	http://ochafik.com/blog/?p=58
+- "A decent graph display (at last !)"
+	http://ochafik.com/blog/?p=60
