@@ -1,0 +1,35 @@
+<html>
+  <head>
+    <script src="node_modules/immutable/dist/immutable.js"></script>
+    
+    <!--<script src="node_modules/systemjs/dist/system.src.js"></script>
+    <script src="node_modules/typescript/lib/typescript.js"></script>-->
+  </head>
+  <body>
+    <div id="nabab"></div>
+    <script src="build/src/main.js"></script> 
+    <!--<script>
+      // System.config({
+      //   transpiler: 'ts'
+      // });
+      // System
+      //   .import('main.ts')
+      //   .then(null, console.error.bind(console));
+      
+      System.config({
+        transpiler: "ts",
+        packages: {
+          "src": {
+            "defaultExtension": "ts",
+            "meta": {
+              "*.ts": {
+                "loader": "ts"
+              }
+            }
+          }
+        }
+      });
+      System.import('src/main.ts').then(null, console.error.bind(console));
+    </script>-->
+  </body>
+</html>

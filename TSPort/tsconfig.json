@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "es6",
+    "module": "es2015",
+    "moduleResolution": "node",
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowJs": true,
+    "forceConsistentCasingInFileNames": true,
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "outDir": "build",
+    "pretty": true,
+    "removeComments": true,
+    "sourceMap": true,
+    "strictNullChecks": true,
+    "jsx": "react",
+    "noImplicitUseStrict": true
+  },
+  "atom": {
+      "rewriteTsconfig": true
+  }
+}

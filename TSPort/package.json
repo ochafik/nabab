@@ -1,0 +1,27 @@
+{
+  "name": "nabab-ts",
+  "description": "TypeScript port of Nabab, Olivier Chafik's toy Bayesian Network Engine",
+  "version": "0.0.1",
+  "main": "bundle.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "tsc && concurrently --kill-others \"npm run tsc:w\" \"npm run lite\" ",
+    "lite": "lite-server",
+    "tsc": "tsc",
+    "tsc:w": "tsc -w",
+    "rollup": "rollup -c"
+  },
+  "devDependencies": {
+    "concurrently": "^3.1.0",
+    "lite-server": "^2.2.2",
+    "rollup": "^0.36.1",
+    "rollup-plugin-filesize": "^1.0.0",
+    "rollup-plugin-json": "^2.0.2",
+    "rollup-plugin-typescript": "^0.8.1",
+    "rollup-plugin-uglify": "^1.0.1",
+    "typescript": "^2.0.3"
+  },
+  "dependencies": {
+    "immutable": "^3.8.1"
+  }
+}
