@@ -1,19 +1,18 @@
 import typescript from 'rollup-plugin-typescript';
 import uglify from 'rollup-plugin-uglify';
-import filesize from 'rollup-plugin-filesize';
-import json from 'rollup-plugin-json';
+// import nodeResolve from 'rollup-plugin-node-resolve';
 
 export default {
   entry: './src/main.ts',
   format: 'iife',
-  dest: 'build/nabab.js',
-  moduleName: 'nabab',
+  dest: 'build/index.js',
   sourceMap: true,
-
   plugins: [
-    json(),
-    typescript(),
-    uglify({sourceMap: true}),
-    filesize(),
+    // nodeResolve({ jsnext: true, main: true }),
+    typescript({
+      // Force usage of same version of typescript as the project:
+      typescript: require('typescript')
+    }),
+    // uglify({sourceMap: true}),
   ]
 }
