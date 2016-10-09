@@ -1,33 +1,26 @@
-///<reference path='../node_modules/immutable/dist/immutable.d.ts'/>
-// import Immutable = require('immutable');
-
-import {DefaultGraph, DefaultEdge, makeEdge} from './graph';
-import {growCliques} from './cliques';
-import {moralize} from './moralization';
+import {DirectedGraph} from './graph';
+import {Edge} from './edge';
+import {buildJunctionGraph} from './junction';
+import Immutable = require('immutable');
 
 function testCliques() {
   // type edge
-  let graph = new DefaultGraph<symbol, DefaultEdge<{}, symbol>>(); 
   let A = Symbol("A"); 
   let B = Symbol("B"); 
   let C = Symbol("C"); 
   let D = Symbol("D");
-  graph = graph.add({
+  let graph = new DirectedGraph<symbol, {}>().add({
     vertices: [A, B, C, D],
     edges: [
-      makeEdge(A, B),
-      makeEdge(A, C),
-      makeEdge(C, D),
-      makeEdge(A, D),
+      new Edge({from: A, to: B}),
+      new Edge({from: A, to: B}),
+      new Edge({from: A, to: C}),
+      new Edge({from: C, to: D}),
+      new Edge({from: A, to: D}),
     ]
-  });
-  console.log(`GRAPH: ${graph}`);
-
-  let moralized = moralize(graph);
-  console.log(`MORAL GRAPH: ${moralized}`);
-
-  let cliques = growCliques(moralized);
-  console.log(`CLIQUES: ${cliques}`);
+  }); 
+  let junctionGraph = buildJunctionGraph(graph, (a, b) => a.toString() < b.toString());
+  console.log(`JUNCTION GRAPH: ${junctionGraph}`);
 }
 
 testCliques();
