@@ -1,4 +1,4 @@
-import Immutable = require('immutable');
+import * as Immutable from 'immutable';
 
 export interface EdgeValues<E, V> {  
     readonly from: V;
@@ -20,5 +20,3 @@ export const Edge = Immutable.Record({
 export function flipEdge<E, V>(edge: Edge<E, V>): Edge<E, V> {
     return new Edge({from: edge.to, to: edge.from, value: edge.value});
 }
-
-// function typedRecord<T>(defaultValues: T): 

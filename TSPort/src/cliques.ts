@@ -1,7 +1,7 @@
 import {UndirectedGraph} from './graph';
 import {Edge} from './edge';
 import {MultiMap} from './multimap';
-import Immutable = require('immutable');
+import * as Immutable from 'immutable';
 
 export class Clique<V> {
   private constructor(

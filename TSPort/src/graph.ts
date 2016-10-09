@@ -1,9 +1,12 @@
 import {MultiMap} from './multimap';
 import {Edge, flipEdge} from './edge';
-import Immutable = require('immutable');
+import * as Immutable from 'immutable';
+
+export type IsLessThan<T> = (a: T, b: T) => boolean; 
 
 export class UndirectedGraph<V, E> {
     constructor(
+        private isLessThan: IsLessThan<V>,
         public readonly vertices = Immutable.Set<V>(),
         private edges = new MultiMap<V, Edge<E, V>>(),
         private neighbours = new MultiMap<V, V>()) {}
@@ -11,10 +14,10 @@ export class UndirectedGraph<V, E> {
     toString() {
         return "UNDIRECTED GRAPH:\n" + 
             this.vertices.map(v => `VERTEX: ${v!.toString()}`).join('\n') + '\n' +
-            // this.destinations + '\n' +
-            // this.origins + '\n' +
-            this.edges.map.valueSeq().flatMap(set => set).toSeq().map((e: Edge<E, V>) =>
-                `EDGE: ${e!.value} = ${e!.from.toString()} -> ${e!.to.toString()}`).join('\n') + '\n';
+            this.edges.map.valueSeq().flatMap(set => set).toSet().map((e: Edge<E, V>) => `EDGE: ${e.toString()}`).join('\n') + '\n';
+    }
+    normalizeEdge(e: Edge<E, V>): Edge<E, V> {
+        return normalizeUndirectedEdge(e, this.isLessThan);
     }
     hasEdge(from: V, to: V): boolean {
         return this.getNeighbours(from).contains(to);
@@ -30,23 +33,29 @@ export class UndirectedGraph<V, E> {
         let newEdges = this.edges;
         let newNeighbours = this.neighbours;
 
-        for (const edge of edges) {
+        for (let edge of edges) {
+            edge = this.normalizeEdge(edge);
             newNeighbours = newNeighbours.add(edge.from, edge.to);
             newEdges = newEdges.add(edge.to, edge).add(edge.from, flipEdge(edge));
         }
-        return new UndirectedGraph<V, E>(newVertices, newEdges, newNeighbours);
+        return new UndirectedGraph<V, E>(this.isLessThan, newVertices, newEdges, newNeighbours);
     }
     remove({vertices = [], edges = []}: {vertices?: V[], edges?: Edge<E, V>[]}): UndirectedGraph<V, E> {
         let newVertices = this.vertices.union(vertices);
         let newEdges = this.edges;
         let newNeighbours = this.neighbours;
 
-        for (const edge of edges) {
+        for (let edge of edges) {
+            edge = this.normalizeEdge(edge);
             newNeighbours = newNeighbours.remove(edge.from, edge.to);
             newEdges = newEdges.remove(edge.to, edge).remove(edge.from, flipEdge(edge));
         }
-        return new UndirectedGraph<V, E>(newVertices, newEdges, newNeighbours);
+        return new UndirectedGraph<V, E>(this.isLessThan, newVertices, newEdges, newNeighbours);
     }
+}
+
+function normalizeUndirectedEdge<E, V>(e: Edge<E, V>, isLessThan: IsLessThan<V>) {
+    return isLessThan(e.from, e.to) ? e : flipEdge(e)
 }
 
 export class DirectedGraph<V, E> {
@@ -57,10 +66,11 @@ export class DirectedGraph<V, E> {
         private incomingEdges = new MultiMap<V, Edge<E, V>>(),
         private origins = new MultiMap<V, V>()) {}
 
-    toUndirected(): UndirectedGraph<V, E> {
+    toUndirected(isLessThan: IsLessThan<V>): UndirectedGraph<V, E> {
         return new UndirectedGraph<V, E>(
+            isLessThan,
             this.vertices,
-            this.outgoingEdges.merge(this.incomingEdges),
+            this.outgoingEdges.merge(this.incomingEdges).mapValues(e => normalizeUndirectedEdge(e, isLessThan)),
             this.destinations.merge(this.origins));
 
     }

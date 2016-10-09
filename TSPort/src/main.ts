@@ -1,25 +1,26 @@
 import {DirectedGraph} from './graph';
 import {Edge} from './edge';
 import {buildJunctionGraph} from './junction';
-import Immutable = require('immutable');
+import * as Immutable from 'immutable';
 
 function testCliques() {
-  // type edge
-  let A = Symbol("A"); 
-  let B = Symbol("B"); 
-  let C = Symbol("C"); 
-  let D = Symbol("D");
-  let graph = new DirectedGraph<symbol, {}>().add({
+  let A = "A"; 
+  let B = "B"; 
+  let C = "C"; 
+  let D = "D";
+  function isLessThan<T>(a: T, b: T) {
+    return a.toString() < b.toString();
+  }
+  let graph = new DirectedGraph<string, {}>().add({
     vertices: [A, B, C, D],
     edges: [
-      new Edge({from: A, to: B}),
       new Edge({from: A, to: B}),
       new Edge({from: A, to: C}),
       new Edge({from: C, to: D}),
       new Edge({from: A, to: D}),
     ]
   }); 
-  let junctionGraph = buildJunctionGraph(graph, (a, b) => a.toString() < b.toString());
+  let junctionGraph = buildJunctionGraph(graph, isLessThan);
   console.log(`JUNCTION GRAPH: ${junctionGraph}`);
 }
 

@@ -1,4 +1,4 @@
-import Immutable = require('immutable');
+import * as Immutable from 'immutable';
 
 export class MultiMap<K, V> {
   constructor(public map = Immutable.Map<K, Immutable.Set<V>>()) {}
@@ -27,5 +27,8 @@ export class MultiMap<K, V> {
       map = map.set(key, map.get(key, Immutable.Set<V>()).union(values));
     })
     return new MultiMap(map);
+  }
+  mapValues(f: (value: V) => V): MultiMap<K, V> {
+    return new MultiMap<K, V>(this.map.map(values => values!.map(f).toSet()).toMap());
   }
 }

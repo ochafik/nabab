@@ -1,8 +1,8 @@
-import {DirectedGraph, UndirectedGraph} from './graph';
+import {DirectedGraph, UndirectedGraph, IsLessThan} from './graph';
 import {Edge} from './edge';
-import Immutable = require('immutable');
+import * as Immutable from 'immutable';
 
-export function moralize<V>(graph: DirectedGraph<V, {}>): UndirectedGraph<V, {}> {
+export function moralize<V>(graph: DirectedGraph<V, {}>, isLessThan: IsLessThan<V>): UndirectedGraph<V, {}> {
   let newEdges: Edge<{}, V>[] = [];
 
   for (let vertex of graph.vertices.toArray()) {
@@ -17,12 +17,6 @@ export function moralize<V>(graph: DirectedGraph<V, {}>): UndirectedGraph<V, {}>
         }
       }
     }
-    // Make sure graph isn't oriented:
-    for (let parent of parents) {
-      if (!graph.hasEdge(vertex, parent)) {
-        newEdges.push(new Edge({from: vertex, to: parent}));
-      }
-    }  
   }
-  return graph.add({edges: newEdges}).toUndirected();
+  return graph.add({edges: newEdges}).toUndirected(isLessThan);
 }
