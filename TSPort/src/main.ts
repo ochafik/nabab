@@ -33,7 +33,7 @@ function isLessThan<T>(a: T, b: T) {
 function openNetworkFromString(src: string) {
   const net = parseXmlBif(src);
   console.log(net.toString());
-  console.log(buildJunctionGraph(net.graph, isLessThan));
+  console.log(buildJunctionGraph(net.graph, isLessThan).toString());
   drawNetwork(net);
 }
 

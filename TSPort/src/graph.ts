@@ -121,7 +121,7 @@ export class DirectedGraph<V, E> {
             newOutgoingEdges = newOutgoingEdges.add(edge.from, edge);
             newDestinations = newDestinations.add(edge.from, edge.to);
             newIncomingEdges = newIncomingEdges.add(edge.to, edge);
-            newOrigins = newDestinations.add(edge.to, edge.from);
+            newOrigins = newOrigins.add(edge.to, edge.from);
         }
         return new DirectedGraph<V, E>(newVertices, newOutgoingEdges, newDestinations, newIncomingEdges, newOrigins);
     }
