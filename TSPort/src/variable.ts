@@ -1,26 +1,22 @@
 import * as Immutable from 'immutable';
 // import {assert, assertThat} from './asserts';
 
+type Position = {readonly x: number, readonly y: number};
 interface VariableValues {  
     readonly name: string;
     readonly outcomes: ReadonlyArray<string>;
-    readonly position?: [number, number];
+    readonly position?: Position;
 }
 const defaultVariableValues: VariableValues = {
     name: "?",
     outcomes: [],
     position: undefined
 }
-// export interface Variable extends VariableValues {
-//     readonly __variable_guard__: never
-// }
-// export const Variable = Immutable.Record(defaultVariableValues) as any as {
-//     new(args: VariableValues): Variable;
-// };
+
 export class Variable extends Immutable.Record(defaultVariableValues) {
     readonly name: string;
     readonly outcomes: ReadonlyArray<string>;
-    readonly position?: [number, number];
+    readonly position?: Position;
     constructor(values: VariableValues) {
         super(values);
     }

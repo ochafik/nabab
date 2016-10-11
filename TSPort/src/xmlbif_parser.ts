@@ -27,10 +27,10 @@ function quote(s: string): string {
 }
 
 const positionPropertyRegExp = /\((\d+)\s*,\s*(\d+)\)/;
-function parsePositionProperty(value?: string): ([number, number] | undefined) {
+function parsePositionProperty(value?: string): ({x: number, y: number} | undefined) {
   if (value == null) return undefined;
   let [, x, y] = [...positionPropertyRegExp.exec(value)!] as any;
-  return x != null && y != null ? [Number(x), Number(y)] : undefined;
+  return x != null && y != null ? {x: Number(x), y: Number(y)} : undefined;
 }
 
 function readDistributions(variable: Variable, given: ReadonlyArray<Variable>, values: number[]): Immutable.Map<Observations, Distribution> {
