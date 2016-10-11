@@ -3,6 +3,7 @@ import * as Immutable from 'immutable';
 import {Network} from './network';
 import {Variable} from './variable';
 import {Edge} from './edge';
+import {mapFromKeyValues} from './collections';
 
 export function drawNetwork(net: Network) {
   // See http://bl.ocks.org/sathomas/11550728
@@ -34,36 +35,64 @@ export function drawNetwork(net: Network) {
       .attr('width', width)
       .attr('height', height);
 
+  const radialGradient = svg.append("defs")
+    .append("radialGradient")
+      .attr("id", "radial-gradient");
+
+  radialGradient.append("stop")
+      .attr("offset", "10%")
+      .attr("stop-color", "gold");
+
+  radialGradient.append("stop")
+      .attr("offset", "95%")
+      .attr("stop-color", "green");
+
   svg.selectAll('.link')
       .data(links)
-      // .data(net.graph.getIncomingEdges().toArray())
       .enter().append('line')
       .attr('class', 'link')
-      // .attr('x1', (d: Edge<{}, Variable>) => d.from.position!.x)
-      // .attr('y1', (d: Edge<{}, Variable>) => d.from.position!.y)
-      // .attr('x2', (d: Edge<{}, Variable>) => d.to.position!.x)
-      // .attr('y2', (d: Edge<{}, Variable>) => d.to.position!.y);
       .attr('x1', d => d.source.x!)
       .attr('y1', d => d.source.y!)
       .attr('x2', d => d.target.x!)
-      .attr('y2', d => d.target.y!);
+      .attr('y2', d => d.target.y!)
+      .style("stroke", "#777")
+      .style("stroke-width", "2px");
 
   const node = svg.selectAll('.node')
       .data(variables)
-      .enter().append('circle')
+      .enter().append('ellipse')
+      .attr('id', (v: Variable) => `var-box-${v.name}`)
       .attr('class', 'node')
-      .attr('r', 20)
       .attr('cx', (v: Variable) => v.position!.x)
       .attr('cy', (v: Variable) => v.position!.y)
-
-  node.append('title')
-      .text((v: Variable) => net.likelihoods.get(v).toString())
+      .style("fill", "url(#radial-gradient)")
+      .style("stroke", "#fff")
+      .style("stroke-width", "2px");
 
   svg.selectAll('.label')
       .data(variables)
       .enter().append('svg:text')
-      .attr('x', (v: Variable) => v.position!.x)
-      .attr('y', (v: Variable) => v.position!.y)
+      .attr('id', (v: Variable) => `var-label-${v.name}`)
       .attr('class', 'id')
-      .text(v => v.name)
+      .attr('x', v => v.position!.x)
+      .attr('y', v => v.position!.y)
+      .attr('alignment-baseline', 'central' )
+      .style('text-anchor', 'middle')
+      .style('font', '12px sans-serif')
+      .style('font-weight', 'bold')
+      .style('pointer-events', 'none')
+      .text(v => v.name);
+
+  const labelBBoxes: Immutable.Map<Variable, SVGRect> = mapFromKeyValues(variables.map(v =>
+     [v, (svg.select(`#var-label-${v.name}`).node() as SVGSVGElement).getBBox()] as [Variable, SVGRect]));
+ 
+  const margin = 7;
+  node
+      .attr('x', v => v.position!.x)
+      .attr('y', v => v.position!.y)
+      .attr('rx', v => labelBBoxes.get(v)!.width / 2 + margin)
+      .attr('ry', v => labelBBoxes.get(v)!.height / 2 + margin);
+
+  node.append('title')
+      .text((v: Variable) => net.likelihoods.get(v).toString())
 }
