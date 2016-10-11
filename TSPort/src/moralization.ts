@@ -1,6 +1,5 @@
 import {DirectedGraph, UndirectedGraph, IsLessThan} from './graph';
 import {Edge} from './edge';
-import * as Immutable from 'immutable';
 
 export function moralize<V>(graph: DirectedGraph<V, {}>, isLessThan: IsLessThan<V>): UndirectedGraph<V, {}> {
   let newEdges: Edge<{}, V>[] = [];

@@ -36,7 +36,7 @@ export function buildJunctionGraph<V>(graph: DirectedGraph<V, {}>, isLessThan: <
       }
     });
   });
-  return new UndirectedGraph<Clique<V>, Separator<V>>(isLessThan).add({
+  return UndirectedGraph.empty<Clique<V>, Separator<V>>(isLessThan).add({
     vertices: cliques.toArray(),
     edges: edges
   });

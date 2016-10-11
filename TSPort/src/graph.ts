@@ -1,6 +1,6 @@
-import {MultiMap} from './multimap';
-import {Edge, flipEdge} from './edge';
 import * as Immutable from 'immutable';
+import {MultiMap} from './multimap';
+import {Edge, flipEdge} from './edge';;
 
 export type IsLessThan<T> = (a: T, b: T) => boolean; 
 
@@ -11,10 +11,15 @@ export class UndirectedGraph<V, E> {
         private edges = new MultiMap<V, Edge<E, V>>(),
         private neighbours = new MultiMap<V, V>()) {}
 
+    static empty<V, E>(isLessThan: IsLessThan<V>): UndirectedGraph<V, E> {
+        return new UndirectedGraph<V, E>(isLessThan);
+    }
+
     toString() {
         return "UNDIRECTED GRAPH:\n" + 
             this.vertices.map(v => `VERTEX: ${v!.toString()}`).join('\n') + '\n' +
-            this.edges.map.valueSeq().flatMap(set => set).toSet().map((e: Edge<E, V>) => `EDGE: ${e.toString()}`).join('\n') + '\n';
+            this.edges.map.valueSeq().flatMap(set => set).toSet().map((e: Edge<E, V>) =>
+                `EDGE: ${e.from.toString()} <-> ${e.to.toString()} (${e.value ? e.value.toString() : ''})`).join('\n') + '\n';
     }
     normalizeEdge(e: Edge<E, V>): Edge<E, V> {
         return normalizeUndirectedEdge(e, this.isLessThan);
@@ -59,13 +64,17 @@ function normalizeUndirectedEdge<E, V>(e: Edge<E, V>, isLessThan: IsLessThan<V>)
 }
 
 export class DirectedGraph<V, E> {
-    constructor(
+    protected constructor(
         public readonly vertices = Immutable.Set<V>(),
         private outgoingEdges = new MultiMap<V, Edge<E, V>>(),
         private destinations = new MultiMap<V, V>(),
         private incomingEdges = new MultiMap<V, Edge<E, V>>(),
         private origins = new MultiMap<V, V>()) {}
 
+    static empty<V, E>(): DirectedGraph<V, E> {
+        return new DirectedGraph<V, E>();
+    }
+    
     toUndirected(isLessThan: IsLessThan<V>): UndirectedGraph<V, E> {
         return new UndirectedGraph<V, E>(
             isLessThan,
@@ -79,11 +88,10 @@ export class DirectedGraph<V, E> {
             this.vertices.map(v => `VERTEX: ${v!.toString()}`).join('\n') + '\n' +
             // this.destinations + '\n' +
             // this.origins + '\n' +
-            this.edges.map(e => `EDGE: ${e!.value} = ${e!.from.toString()} -> ${e!.to.toString()}`).join('\n') + '\n';
+            this.outgoingEdges.map.valueSeq().flatMap(set => set!.map((e: Edge<E, V>) =>
+                `EDGE: ${e!.from.toString()} -> ${e!.to.toString()} (${e!.value ? e!.value!.toString() : ''})`)).join('\n') + '\n';
     }
-    get edges(): Immutable.Set<Edge<E, V>> {
-        return this.outgoingEdges.merge(this.incomingEdges).map.valueSeq().flatMap((s: Immutable.Set<Edge<E, V>>) => s).toSet();
-    }
+
     hasEdge(from: V, to: V): boolean {
         return this.getDestinations(from).contains(to);
     }

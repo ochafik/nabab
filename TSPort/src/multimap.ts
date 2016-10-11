@@ -26,7 +26,7 @@ export class MultiMap<K, V> {
     other.map.forEach((values: Immutable.Set<V>, key: K) => {
       map = map.set(key, map.get(key, Immutable.Set<V>()).union(values));
     })
-    return new MultiMap(map);
+    return new MultiMap<K, V>(map);
   }
   mapValues(f: (value: V) => V): MultiMap<K, V> {
     return new MultiMap<K, V>(this.map.map(values => values!.map(f).toSet()).toMap());
