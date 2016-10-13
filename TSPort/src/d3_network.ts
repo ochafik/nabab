@@ -2,7 +2,7 @@ import * as d3 from 'd3';
 import * as Immutable from 'immutable';
 import {Network} from './network';
 import {Variable} from './variable';
-import {Edge} from './edge';
+import {Edge} from './graph/edge';
 import {mapFromKeyValues} from './collections';
 
 export function drawNetwork(net: Network) {
@@ -45,7 +45,7 @@ export function drawNetwork(net: Network) {
 
   radialGradient.append("stop")
       .attr("offset", "95%")
-      .attr("stop-color", "green");
+      .attr("stop-color", "gray");
 
   svg.selectAll('.link')
       .data(links)
@@ -78,7 +78,7 @@ export function drawNetwork(net: Network) {
       .attr('y', v => v.position!.y)
       .attr('alignment-baseline', 'central' )
       .style('text-anchor', 'middle')
-      .style('font', '12px sans-serif')
+      .style('font', '9px sans-serif')
       .style('font-weight', 'bold')
       .style('pointer-events', 'none')
       .text(v => v.name);

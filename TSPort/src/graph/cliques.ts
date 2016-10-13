@@ -1,6 +1,5 @@
-import {UndirectedGraph} from './graph';
-import {Edge} from './edge';
-import {MultiMap} from './multimap';
+import {UndirectedGraph, Edge} from '.';
+import {MultiMap} from '../collections/multimap';
 import * as Immutable from 'immutable';
 
 export class Clique<V> {
@@ -55,7 +54,7 @@ export function* growClique<V, E extends Edge<any, V>>(clique: Clique<V>, isLess
   }
 }
 
-export function growCliques<V, E extends Edge<any, V>>(graph: UndirectedGraph<V, any>, isLessThan: (a: V, b: V) => boolean): Immutable.Set<Clique<V>> {
+export function growCliques<V, E>(graph: UndirectedGraph<V, E>, isLessThan: (a: V, b: V) => boolean): Immutable.Set<Clique<V>> {
   let result = Immutable.Set<Clique<V>>();
   graph.vertices.forEach((v: V) =>
       result = result.union([...growClique(Clique.of(graph, Immutable.Set.of(v)), isLessThan)]));

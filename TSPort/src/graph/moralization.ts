@@ -1,5 +1,4 @@
-import {DirectedGraph, UndirectedGraph, IsLessThan} from './graph';
-import {Edge} from './edge';
+import {DirectedGraph, UndirectedGraph, Edge} from '.';
 
 export function moralize<V>(graph: DirectedGraph<V, {}>, isLessThan: IsLessThan<V>): UndirectedGraph<V, {}> {
   let newEdges: Edge<{}, V>[] = [];

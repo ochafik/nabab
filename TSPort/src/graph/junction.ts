@@ -1,12 +1,12 @@
-import {DirectedGraph, UndirectedGraph} from './graph';
-import {Edge} from './edge';
-import {Clique, growCliques} from './cliques';
-import {moralize} from './moralization';
-import {MultiMap} from './multimap';
+import {DirectedGraph, UndirectedGraph, Edge, Clique, growCliques, moralize} from '.';
+// import {UndirectedGraph} from './undirected_graph';
+// import {Edge} from './edge';
+// import {Clique, growCliques} from './cliques';
+// import {moralize} from './moralization';
+import {MultiMap} from '../collections/multimap';
 import * as Immutable from 'immutable';
 
 type Separator<V> = Immutable.Set<V>;
-
 
 export function buildJunctionGraph<V>(graph: DirectedGraph<V, {}>, isLessThan: <T>(a: T, b: T) => boolean): UndirectedGraph<Clique<V>, Separator<V>> {
   console.log(`GRAPH: ${graph}`);
@@ -14,7 +14,7 @@ export function buildJunctionGraph<V>(graph: DirectedGraph<V, {}>, isLessThan: <
   let moralized = moralize(graph, isLessThan);
   console.log(`MORAL GRAPH: ${moralized}`);
 
-  let cliques = growCliques(moralized, isLessThan);
+  let cliques = growCliques<V, {}>(moralized, isLessThan);
   console.log(`CLIQUES: ${cliques}`);
 
   let cliquesByVertex = new MultiMap<V, Clique<V>>();

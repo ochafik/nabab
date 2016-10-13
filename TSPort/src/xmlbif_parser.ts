@@ -1,6 +1,4 @@
-import {DirectedGraph} from './graph';
-import {Edge} from './edge';
-import {buildJunctionGraph} from './junction';
+import {DirectedGraph, Edge, buildJunctionGraph} from './graph';
 import {Network} from './network';
 import {Distribution, Variable, VariableLikelihood, Observations} from './variable';
 import * as Immutable from 'immutable';

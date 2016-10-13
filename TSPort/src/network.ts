@@ -1,6 +1,5 @@
 import * as Immutable from 'immutable';
-import {DirectedGraph} from './graph';
-import {Edge} from './edge';
+import {DirectedGraph, Edge} from './graph';
 import {Variable, VariableLikelihood} from './variable';
 import {mapFromKeyValues} from './collections';
 

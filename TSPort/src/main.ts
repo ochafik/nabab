@@ -1,6 +1,4 @@
-import {DirectedGraph} from './graph';
-import {Edge} from './edge';
-import {buildJunctionGraph} from './junction';
+import {DirectedGraph, Edge, buildJunctionGraph} from './graph';
 import * as Immutable from 'immutable';
 import {parseXmlBif} from './xmlbif_parser';
 import {getUrl} from './request';
