@@ -8,13 +8,16 @@
     "start": "npm i && concurrently --kill-others \"npm run rollup:w\" \"npm run lite\" ",
     "lite": "lite-server",
     "rollup": "rollup -c",
-    "rollup:w": "rollup -c -w",
+    "rollup:w_": "rollup -c -w",
+    "rollup:w": "watch \"npm run rollup\" src --wait=0 --interval=0.1",
     "tsc": "tsc",
     "tsc:w": "tsc -w",
     "build": "npm i && npm run rollup && inline-assets index.html build/index.html"
   },
   "devDependencies": {
+    "@types/d3": "^3.5.36",
     "concurrently": "^3.1.0",
+    "d3": "^4.2.6",
     "inline-assets": "^1.1.0",
     "lite-server": "^2.2.2",
     "rollup": "^0.36.1",
@@ -22,7 +25,8 @@
     "rollup-plugin-typescript": "^0.8.1",
     "rollup-plugin-uglify": "^1.0.1",
     "rollup-watch": "^2.5.0",
-    "typescript": "^2.0.3"
+    "typescript": "^2.0.3",
+    "watch": "^1.0.1"
   },
   "dependencies": {
     "immutable": "^3.8.1"
