@@ -1,4 +1,4 @@
-import {DirectedGraph, UndirectedGraph, Edge, Clique, growCliques, moralize} from '.';
+import {DirectedGraph, UndirectedGraph, Edge, Clique, growCliques, moralize, triangulate} from '.';
 // import {UndirectedGraph} from './undirected_graph';
 // import {Edge} from './edge';
 // import {Clique, growCliques} from './cliques';
@@ -14,7 +14,10 @@ export function buildJunctionGraph<V>(graph: DirectedGraph<V, {}>, isLessThan: <
   let moralized = moralize(graph, isLessThan);
   console.log(`MORAL GRAPH: ${moralized}`);
 
-  let cliques = growCliques<V, {}>(moralized, isLessThan);
+  let triangulated = triangulate(moralized);
+  console.log(`TRIANGULAR GRAPH: ${triangulated}`);
+
+  let cliques = growCliques<V, {}>(triangulated, isLessThan);
   console.log(`CLIQUES: ${cliques}`);
 
   let cliquesByVertex = new MultiMap<V, Clique<V>>();
@@ -27,7 +30,7 @@ export function buildJunctionGraph<V>(graph: DirectedGraph<V, {}>, isLessThan: <
   cliques.forEach((clique: Clique<V>) => {
     let neighbourCliques: Immutable.Set<Clique<V>> =
         clique.neighbours.flatMap((n: V) => cliquesByVertex.get(n)).toSet();
-    
+
     neighbourCliques.forEach((neighbourClique: Clique<V>) => {
       let separator = clique.vertices.intersect(neighbourClique.vertices);
       let newSeparators = separators.add(separator);
