@@ -5,14 +5,14 @@
   "main": "bundle.js",
   "license": "MIT",
   "scripts": {
-    "start": "npm i && concurrently --kill-others \"npm run rollup:w\" \"npm run lite\" ",
+    "start": "concurrently --kill-others \"npm run rollup:w\" \"npm run lite\" ",
     "lite": "lite-server",
     "rollup": "rollup -c",
-    "rollup:w_": "rollup -c -w",
+    "rollup:w_buggy": "rollup -c -w",
     "rollup:w": "watch \"npm run rollup\" src --wait=0 --interval=0.1",
     "tsc": "tsc",
     "tsc:w": "tsc -w",
-    "build": "npm i && npm run rollup && inline-assets index.html build/index.html"
+    "build": "npm run rollup && inline-assets index.html build/index.html"
   },
   "devDependencies": {
     "@types/d3": "^3.5.36",
@@ -26,6 +26,7 @@
     "rollup-plugin-uglify": "^1.0.1",
     "rollup-watch": "^2.5.0",
     "typescript": "^2.0.3",
+    "uglify-js": "git://github.com/mishoo/UglifyJS2#harmony",
     "watch": "^1.0.1"
   },
   "dependencies": {
