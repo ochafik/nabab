@@ -1,4 +1,5 @@
-import {DirectedGraph, Edge, buildJunctionGraph} from './graph';
+import {Heap} from './collections/heap';
+import {DirectedGraph, Edge, buildJunctionTree} from './graph';
 import * as Immutable from 'immutable';
 import {parseXmlBif} from './xmlbif_parser';
 import {getUrl} from './request';
@@ -9,9 +10,9 @@ function isLessThan<T>(a: T, b: T) {
   return a.toString() < b.toString();
 }
 // function testCliques() {
-//   let A = "A"; 
-//   let B = "B"; 
-//   let C = "C"; 
+//   let A = "A";
+//   let B = "B";
+//   let C = "C";
 //   let D = "D";
 //   let graph = DirectedGraph.empty<string, {}>().add({
 //     vertices: [A, B, C, D],
@@ -21,7 +22,7 @@ function isLessThan<T>(a: T, b: T) {
 //       new Edge({from: C, to: D}),
 //       new Edge({from: A, to: D}),
 //     ]
-//   }); 
+//   });
 //   let junctionGraph = buildJunctionGraph(graph, isLessThan);
 //   console.log(`JUNCTION GRAPH: ${junctionGraph}`);
 // }
@@ -31,7 +32,8 @@ function isLessThan<T>(a: T, b: T) {
 function openNetworkFromString(src: string) {
   const net = parseXmlBif(src);
   console.log(net.toString());
-  console.log(buildJunctionGraph(net.graph, isLessThan).toString());
+  const junctionTree = buildJunctionTree(net.graph, isLessThan).toString();
+  console.log(junctionTree);
   drawNetwork(net);
 }
 

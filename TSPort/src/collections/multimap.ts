@@ -3,6 +3,13 @@ import * as Immutable from 'immutable';
 export class MultiMap<K, V> {
   constructor(public map = Immutable.Map<K, Immutable.Set<V>>()) {}
   
+  *getAllValues(): IterableIterator<V> {
+    const it = this.map.values();
+    let res: IteratorResult<Immutable.Set<V>>;
+    while (!(res = it.next()).done) {
+      yield *res.value.toArray();
+    }
+  }
   toString() {
     return this.map.toString();
   }

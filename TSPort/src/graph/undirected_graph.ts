@@ -8,17 +8,21 @@ export class UndirectedGraph<V, E> {
     constructor(
         private isLessThan: IsLessThan<V>,
         public readonly vertices = Immutable.Set<V>(),
-        private edges = new MultiMap<V, Edge<E, V>>(),
+        private edgesByVertex = new MultiMap<V, Edge<E, V>>(),
         private neighbours = new MultiMap<V, V>()) {}
 
     static empty<V, E>(isLessThan: IsLessThan<V>): UndirectedGraph<V, E> {
         return new UndirectedGraph<V, E>(isLessThan);
     }
 
+    getAllEdges(): Edge<E, V>[] {
+        return [...this.edgesByVertex.getAllValues()];
+    }
+
     toString() {
         return "UNDIRECTED GRAPH:\n" + 
             this.vertices.map(v => `VERTEX: ${v!.toString()}`).join('\n') + '\n' +
-            this.edges.map.valueSeq().flatMap(set => set).toSet().map((e: Edge<E, V>) =>
+            this.edgesByVertex.map.valueSeq().flatMap(set => set).toSet().map((e: Edge<E, V>) =>
                 `EDGE: ${e.from.toString()} <-> ${e.to.toString()} (${e.value ? e.value.toString() : ''})`).join('\n') + '\n';
     }
     normalizeEdge(e: Edge<E, V>): Edge<E, V> {
@@ -28,14 +32,17 @@ export class UndirectedGraph<V, E> {
         return this.getNeighbours(from).contains(to);
     }
     getEdges(vertex: V): Immutable.Set<Edge<E, V>> {
-        return this.edges.get(vertex) || Immutable.Set<V>();
+        return this.edgesByVertex.get(vertex) || Immutable.Set<V>();
     }
     getNeighbours(vertex: V): Immutable.Set<V> {
         return this.neighbours.get(vertex) || Immutable.Set<V>();
     }
+    empty(): UndirectedGraph<V, E> {
+        return UndirectedGraph.empty<V, E>(this.isLessThan);
+    }
     add({vertices = [], edges = []}: {vertices?: V[], edges?: Edge<E, V>[]}): UndirectedGraph<V, E> {
         let newVertices = this.vertices.union(vertices);
-        let newEdges = this.edges;
+        let newEdges = this.edgesByVertex;
         let newNeighbours = this.neighbours;
 
         for (let edge of edges) {
@@ -47,7 +54,7 @@ export class UndirectedGraph<V, E> {
     }
     remove({vertices = [], edges = []}: {vertices?: V[], edges?: Edge<E, V>[]}): UndirectedGraph<V, E> {
         let newVertices = this.vertices.union(vertices);
-        let newEdges = this.edges;
+        let newEdges = this.edgesByVertex;
         let newNeighbours = this.neighbours;
 
         for (let edge of edges) {

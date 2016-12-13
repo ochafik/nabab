@@ -1,14 +1,10 @@
-import {DirectedGraph, UndirectedGraph, Edge, Clique, growCliques, moralize, triangulate} from '.';
-// import {UndirectedGraph} from './undirected_graph';
-// import {Edge} from './edge';
-// import {Clique, growCliques} from './cliques';
-// import {moralize} from './moralization';
+import {DirectedGraph, UndirectedGraph, Edge, Clique, growCliques, minimumSpanningTree, moralize, triangulate} from '.';
 import {MultiMap} from '../collections/multimap';
 import * as Immutable from 'immutable';
 
 type Separator<V> = Immutable.Set<V>;
 
-export function buildJunctionGraph<V>(graph: DirectedGraph<V, {}>, isLessThan: <T>(a: T, b: T) => boolean): UndirectedGraph<Clique<V>, Separator<V>> {
+export function buildJunctionTree<V>(graph: DirectedGraph<V, {}>, isLessThan: <T>(a: T, b: T) => boolean): UndirectedGraph<Clique<V>, Separator<V>> {
   console.log(`GRAPH: ${graph}`);
 
   let moralized = moralize(graph, isLessThan);
@@ -39,8 +35,16 @@ export function buildJunctionGraph<V>(graph: DirectedGraph<V, {}>, isLessThan: <
       }
     });
   });
-  return UndirectedGraph.empty<Clique<V>, Separator<V>>(isLessThan).add({
+
+  let junctionGraph = UndirectedGraph.empty<Clique<V>, Separator<V>>(isLessThan).add({
     vertices: cliques.toArray(),
     edges: edges
   });
+  // console.log(`JUNCTION GRAPH: ${junctionGraph}`);
+
+  // let junctionTree = junctionGraph;
+  let junctionTree = minimumSpanningTree<Clique<V>, Separator<V>>(junctionGraph, (a, b) => a.size > b.size);
+  console.log(`JUNCTION TREE: ${junctionTree}`);
+
+  return junctionTree;
 }
