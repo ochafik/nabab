@@ -2,19 +2,20 @@ import {DirectedGraph, UndirectedGraph, Edge, Clique, growCliques, minimumSpanni
 import {MultiMap} from '../collections/multimap';
 import * as Immutable from 'immutable';
 
-type Separator<V> = Immutable.Set<V>;
+export type Separator<V> = Immutable.Set<V>;
+export type JunctionTree<V> = UndirectedGraph<Clique<V>, Separator<V>>;
 
-export function buildJunctionTree<V>(graph: DirectedGraph<V, {}>, isLessThan: <T>(a: T, b: T) => boolean): UndirectedGraph<Clique<V>, Separator<V>> {
-  console.log(`GRAPH: ${graph}`);
+export function buildJunctionTree<V>(graph: DirectedGraph<V, {}>, isLessThan: <T>(a: T, b: T) => boolean): JunctionTree<V> {
+  // console.log(`GRAPH: ${graph}`);
 
   let moralized = moralize(graph, isLessThan);
-  console.log(`MORAL GRAPH: ${moralized}`);
+  // console.log(`MORAL GRAPH: ${moralized}`);
 
   let triangulated = triangulate(moralized);
-  console.log(`TRIANGULAR GRAPH: ${triangulated}`);
+  // console.log(`TRIANGULAR GRAPH: ${triangulated}`);
 
   let cliques = growCliques<V, {}>(triangulated, isLessThan);
-  console.log(`CLIQUES: ${cliques}`);
+  // console.log(`CLIQUES: ${cliques}`);
 
   let cliquesByVertex = new MultiMap<V, Clique<V>>();
   cliques.forEach((c: Clique<V>) =>
@@ -44,7 +45,8 @@ export function buildJunctionTree<V>(graph: DirectedGraph<V, {}>, isLessThan: <T
 
   // let junctionTree = junctionGraph;
   let junctionTree = minimumSpanningTree<Clique<V>, Separator<V>>(junctionGraph, (a, b) => a.size > b.size);
-  console.log(`JUNCTION TREE: ${junctionTree}`);
+  //console.log(`JUNCTION TREE: ${junctionTree}`);
+  // console.log(`JUNCTION TREE: ${junctionTree.vertices.size}  `);
 
   return junctionTree;
 }
