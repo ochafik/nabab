@@ -35,8 +35,27 @@ export function drawNetwork(net: Network) {
       .attr('width', width)
       .attr('height', height);
 
-  const radialGradient = svg.append("defs")
-    .append("radialGradient")
+  var defs = svg.append("defs")
+
+  defs.append("marker")
+        .attr("id", "arrow")
+        .attr("viewBox", "0 -5 10 10")
+        .attr("refX", 5)
+        .attr("refY", 0)
+        .attr("markerWidth", 4)
+        .attr("markerHeight", 4)
+        .attr("orient", "auto")
+        .append("path")
+            .attr("class","arrowHead")
+            .attr("d", "M0,-5L10,0L0,5");
+
+// .arrow{
+// 		stroke-width:5;
+// 		stroke:#000;
+// 		stroke-dasharray:5, 5;
+// 	}
+
+  const radialGradient = defs.append("radialGradient")
       .attr("id", "radial-gradient");
 
   radialGradient.append("stop")
@@ -55,8 +74,9 @@ export function drawNetwork(net: Network) {
       .attr('y1', d => d.source.y!)
       .attr('x2', d => d.target.x!)
       .attr('y2', d => d.target.y!)
-      .style("stroke", "#777")
-      .style("stroke-width", "2px");
+      .attr("marker-end", "url(#arrow)")
+      .style("stroke", "black")
+      .style("stroke-width", "1px");
 
   const node = svg.selectAll('.node')
       .data(variables)
@@ -65,9 +85,8 @@ export function drawNetwork(net: Network) {
       .attr('class', 'node')
       .attr('cx', (v: Variable) => v.position!.x)
       .attr('cy', (v: Variable) => v.position!.y)
-      .style("fill", "url(#radial-gradient)")
-      .style("stroke", "#fff")
-      .style("stroke-width", "2px");
+      .style("opacity", 0.6)
+      .style("fill", "url(#radial-gradient)");
 
   svg.selectAll('.label')
       .data(variables)
@@ -85,7 +104,7 @@ export function drawNetwork(net: Network) {
 
   const labelBBoxes: Immutable.Map<Variable, SVGRect> = mapFromKeyValues(variables.map(v =>
      [v, (svg.select(`#var-label-${v.name}`).node() as SVGSVGElement).getBBox()] as [Variable, SVGRect]));
- 
+
   const margin = 7;
   node
       .attr('x', v => v.position!.x)
