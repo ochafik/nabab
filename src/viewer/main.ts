@@ -835,11 +835,12 @@ function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Va
   const isObs = observationEnabled.has(v.name);
   const clearAll = () => { hardEvidence.delete(v.name); softEvidence.delete(v.name); observationEnabled.delete(v.name); render(); };
 
-  // Layout: label (right-aligned) ... bar+thumb ... pct
-  const pctColW = 32;
+  // Layout: label (right-aligned) [gap] bar+thumb [gap] pct
+  const pctColW = 38;
   const labelColW = Math.max(...v.outcomes.map(o => o.length)) * 6.5 + 4;
-  const barPad = 8;
-  const bw = w - 16 - labelColW - barPad - pctColW;
+  const barPad = 6;
+  const thumbR = 5;
+  const bw = w - 16 - labelColW - barPad - pctColW - thumbR;
   const bx = -w / 2 + 8 + labelColW + barPad;
 
   let y = -h / 2 + 30;
@@ -858,12 +859,15 @@ function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Va
     const lg = g.append('g').attr('class', 'cz').attr('cursor', 'pointer')
       .on('click', (ev) => { ev.stopPropagation(); cycleOutcome(v, i); });
     lg.append('rect').attr('x', -w / 2 + 6).attr('y', by - 8).attr('width', labelColW + 4).attr('height', 16).attr('fill', 'transparent');
-    lg.append('text').attr('x', bx - barPad).attr('y', by + 4)
-      .attr('font-size', '10px').attr('fill', 'var(--text-secondary)').attr('text-anchor', 'end').text(o);
+    const textY = by + 3; // align with bar center
+    lg.append('text').attr('x', bx - barPad).attr('y', textY)
+      .attr('font-size', '10px').attr('fill', 'var(--text-secondary)')
+      .attr('text-anchor', 'end').attr('dominant-baseline', 'central').text(o);
 
-    // Percentage (right side)
-    g.append('text').attr('x', w / 2 - 8).attr('y', by + 4)
-      .attr('font-size', '10px').attr('font-weight', '600').attr('fill', 'var(--text)').attr('text-anchor', 'end')
+    // Percentage (right side, with gap from bar end)
+    g.append('text').attr('x', w / 2 - 8).attr('y', textY)
+      .attr('font-size', '10px').attr('font-weight', '600').attr('fill', 'var(--text)')
+      .attr('text-anchor', 'end').attr('dominant-baseline', 'central')
       .text(`${pct}%`);
 
     // Bar background (click-to-jump)
