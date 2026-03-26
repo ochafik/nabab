@@ -390,12 +390,12 @@ function measureTextWidths(
     // Measure header text
     let headerText = v.name;
     if (dist && isSliderVar(v)) {
-      const p0 = Math.round((dist.get(v.outcomes[0]) ?? 0) * 100);
-      headerText += isBoolVar(v) ? `: ${p0}%` : `: ${p0}% ${v.outcomes[0]}`;
+      // Measure worst case: longest outcome name + "100%"
+      const longest = v.outcomes[0].length > v.outcomes[1].length ? v.outcomes[0] : v.outcomes[1];
+      headerText += `: 100% ${longest}`;
     } else if (dist) {
-      let maxOut = v.outcomes[0], maxP = 0;
-      for (const o of v.outcomes) { const p = dist.get(o) ?? 0; if (p > maxP) { maxP = p; maxOut = o; } }
-      headerText += `: ${maxOut} ${Math.round(maxP * 100)}%`;
+      const longest = v.outcomes.reduce((a, b) => a.length > b.length ? a : b);
+      headerText += `: 100% ${longest}`;
     }
     const headerEl = measureG.append('text')
       .attr('font-size', '12px').attr('font-weight', '600').text(headerText);
@@ -585,14 +585,25 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
     if (isHard) {
       labelSuffix = ` = ${hardEvidence.get(v.name)}`;
     } else if (dist && isSliderVar(v)) {
-      // 2-outcome: show P(outcomes[0]) to match slider (right = outcomes[0])
-      const p0 = Math.round((dist.get(v.outcomes[0]) ?? 0) * 100);
-      labelSuffix = isBoolVar(v) ? `: ${p0}%` : `: ${p0}% ${v.outcomes[0]}`;
+      // 2-outcome: slider right = outcomes[0]
+      const p0 = dist.get(v.outcomes[0]) ?? 0;
+      const pct0 = Math.round(p0 * 100);
+      if (isBoolVar(v)) {
+        labelSuffix = pct0 === 100 ? '' : pct0 === 0 ? '' : `: ${pct0}%`;
+      } else if (pct0 === 0) {
+        // 0% of outcomes[0] → just say outcomes[1]
+        labelSuffix = `: ${v.outcomes[1]}`;
+      } else if (pct0 === 100) {
+        labelSuffix = `: ${v.outcomes[0]}`;
+      } else {
+        labelSuffix = `: ${pct0}% ${v.outcomes[0]}`;
+      }
     } else if (dist) {
-      // Categorical: show most likely outcome
+      // N-categorical: show highest-% category
       let maxOut = v.outcomes[0], maxP = 0;
       for (const o of v.outcomes) { const p = dist.get(o) ?? 0; if (p > maxP) { maxP = p; maxOut = o; } }
-      labelSuffix = `: ${maxOut} ${Math.round(maxP * 100)}%`;
+      const maxPct = Math.round(maxP * 100);
+      labelSuffix = maxPct === 100 ? `: ${maxOut}` : `: ${maxPct}% ${maxOut}`;
     } else {
       labelSuffix = '';
     }
