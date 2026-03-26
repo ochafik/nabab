@@ -870,13 +870,13 @@ function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Va
       .attr('text-anchor', 'end').attr('dominant-baseline', 'central')
       .text(`${pct}%`);
 
-    // Bar background (click-to-jump)
+    // Bar: fill shows POSTERIOR (matches %) — thumb shows evidence position
     const barHit = g.append('rect').attr('x', bx).attr('y', by - 4).attr('width', bw).attr('height', 14)
       .attr('fill', 'transparent').attr('cursor', 'pointer').attr('class', 'cz');
     g.append('rect').attr('x', bx).attr('y', by).attr('width', bw).attr('height', 6)
       .attr('rx', 3).attr('fill', 'var(--bg-bar)').attr('pointer-events', 'none');
-    if (thumbPos > 0.005)
-      g.append('rect').attr('x', bx).attr('y', by).attr('width', Math.max(3, bw * thumbPos)).attr('height', 6)
+    if (prob > 0.005)
+      g.append('rect').attr('x', bx).attr('y', by).attr('width', Math.max(3, bw * prob)).attr('height', 6)
         .attr('rx', 3).attr('fill', accent).attr('opacity', 0.6).attr('pointer-events', 'none');
 
     // Click-to-jump on bar
