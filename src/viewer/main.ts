@@ -244,7 +244,7 @@ function autoLayout() {
   const g = new dagre.graphlib.Graph();
   g.setGraph({ rankdir: 'TB', nodesep: 50, ranksep: 70, marginx: 30, marginy: 30 });
   g.setDefaultEdgeLabel(() => ({}));
-  for (const v of network.variables) g.setNode(v.name, { width: NODE_W, height: nodeH(v) });
+  for (const v of network.variables) g.setNode(v.name, { width: nodeW(v), height: nodeH(v) });
   for (const cpt of network.cpts)
     for (const p of cpt.parents) g.setEdge(p.name, cpt.variable.name);
   dagre.layout(g);
@@ -356,13 +356,49 @@ function render() {
 const ICON_VIS = 'M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z';
 const ICON_VIS_OFF = 'M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z';
 
-const NODE_W = 170;
+const NODE_W_MIN = 150;
 const NODE_H_BOOL = 56;
+const NODE_H_BOOL_LABELS = 68; // extra room when showing non-standard labels
 const NODE_H_MULTI_BASE = 30;
 const NODE_H_PER_OUTCOME = 24;
+const CHAR_W = 6.5; // approx px per character at 10px font
 
-function nodeH(v: Variable) {
-  return v.outcomes.length === 2 ? NODE_H_BOOL : NODE_H_MULTI_BASE + v.outcomes.length * NODE_H_PER_OUTCOME;
+const BOOL_PATTERNS = /^(true|false|yes|no|t|f|y|n)$/i;
+
+/** Is this a boolean variable with standard true/false-like outcomes? */
+function isBoolVar(v: Variable): boolean {
+  return v.outcomes.length === 2 && BOOL_PATTERNS.test(v.outcomes[0]) && BOOL_PATTERNS.test(v.outcomes[1]);
+}
+
+/** Is this variable displayed as a single slider (2 outcomes)? */
+function isSliderVar(v: Variable): boolean {
+  return v.outcomes.length === 2;
+}
+
+/** Compute node width based on content. */
+function nodeW(v: Variable): number {
+  // Account for eye icon (28px) + padding (16px) + name + suffix
+  const nameLen = v.name.length + 6; // ": XX%" or "= outcome"
+  const headerW = 44 + nameLen * CHAR_W;
+
+  if (isSliderVar(v)) {
+    // Boolean-like: need room for labels if non-standard
+    if (!isBoolVar(v)) {
+      const labelW = 44 + Math.max(v.outcomes[0].length, v.outcomes[1].length) * CHAR_W * 2 + 40;
+      return Math.max(NODE_W_MIN, headerW, labelW);
+    }
+    return Math.max(NODE_W_MIN, headerW);
+  }
+
+  // Multi-class: label (right-aligned) + slider + "100%"
+  const maxLabel = Math.max(...v.outcomes.map(o => o.length));
+  const tableW = maxLabel * CHAR_W + 80 + 40; // label + slider + pct
+  return Math.max(NODE_W_MIN, headerW, tableW);
+}
+
+function nodeH(v: Variable): number {
+  if (isSliderVar(v)) return isBoolVar(v) ? NODE_H_BOOL : NODE_H_BOOL_LABELS;
+  return NODE_H_MULTI_BASE + v.outcomes.length * NODE_H_PER_OUTCOME;
 }
 
 let _edgeGroup: d3.Selection<SVGGElement, unknown, null, undefined> | null = null;
@@ -380,8 +416,9 @@ function fitView() {
     const p = nodePositions.get(v.name);
     if (!p) continue;
     const h = nodeH(v);
-    minX = Math.min(minX, p.x - NODE_W / 2);
-    maxX = Math.max(maxX, p.x + NODE_W / 2);
+    const w = nodeW(v);
+    minX = Math.min(minX, p.x - w / 2);
+    maxX = Math.max(maxX, p.x + w / 2);
     minY = Math.min(minY, p.y - h / 2);
     maxY = Math.max(maxY, p.y + h / 2);
   }
@@ -436,6 +473,7 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
   for (const v of net.variables) {
     const pos = nodePositions.get(v.name)!;
     const dist = posteriors.get(v);
+    const w = nodeW(v);
     const h = nodeH(v);
     const isObs = observationEnabled.has(v.name);
     const isHard = isObs && hardEvidence.has(v.name);
@@ -459,14 +497,14 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
 
     // Selection highlight (behind the node)
     if (isSel) {
-      ng.append('rect').attr('x', -NODE_W / 2 - 3).attr('y', -h / 2 - 3)
-        .attr('width', NODE_W + 6).attr('height', h + 6).attr('rx', 10)
+      ng.append('rect').attr('x', -w / 2 - 3).attr('y', -h / 2 - 3)
+        .attr('width', w + 6).attr('height', h + 6).attr('rx', 10)
         .attr('fill', 'none').attr('stroke', 'var(--accent)').attr('stroke-width', 2.5)
         .attr('stroke-dasharray', '4,2').attr('opacity', 0.8);
     }
 
-    ng.append('rect').attr('x', -NODE_W / 2).attr('y', -h / 2)
-      .attr('width', NODE_W).attr('height', h).attr('rx', 8)
+    ng.append('rect').attr('x', -w / 2).attr('y', -h / 2)
+      .attr('width', w).attr('height', h).attr('rx', 8)
       .attr('fill', bgFill).attr('stroke', borderCol).attr('stroke-width', 1.5)
       .attr('filter', 'url(#node-shadow)');
 
@@ -512,9 +550,12 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
     let labelSuffix: string;
     if (isHard) {
       labelSuffix = ` = ${hardEvidence.get(v.name)}`;
-    } else if (dist && v.outcomes.length === 2) {
-      // Boolean: show P(first outcome)
-      labelSuffix = `: ${Math.round((dist.get(v.outcomes[0]) ?? 0) * 100)}%`;
+    } else if (dist && isSliderVar(v)) {
+      // 2-outcome: show "X% MostLikely"
+      const p0 = dist.get(v.outcomes[0]) ?? 0;
+      const best = p0 >= 0.5 ? v.outcomes[0] : v.outcomes[1];
+      const bestP = p0 >= 0.5 ? p0 : 1 - p0;
+      labelSuffix = isBoolVar(v) ? `: ${Math.round(bestP * 100)}%` : `: ${Math.round(bestP * 100)}% ${best}`;
     } else if (dist) {
       // Categorical: show most likely outcome
       let maxOut = v.outcomes[0], maxP = 0;
@@ -526,7 +567,7 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
 
     // Eye icon (Material Design Visibility / VisibilityOff)
     const eyeG = ng.append('g').attr('class', 'cz').attr('cursor', 'pointer')
-      .attr('transform', `translate(${-NODE_W / 2 + 18},${ry})`)
+      .attr('transform', `translate(${-w / 2 + 18},${ry})`)
       .on('click', (ev) => { ev.stopPropagation(); toggleEye(v); });
     eyeG.append('rect').attr('x', -10).attr('y', -10).attr('width', 20).attr('height', 20).attr('fill', 'transparent');
     const eyeColor = isObs ? (isHard ? 'var(--accent-hard)' : isSoft ? 'var(--accent-soft)' : 'var(--accent)') : 'var(--text-dim)';
@@ -536,17 +577,17 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
 
     // Name + percentage
     const nameG = ng.append('g').attr('class', 'cz').attr('cursor', 'pointer')
-      .attr('transform', `translate(${-NODE_W / 2 + 32},${ry})`)
+      .attr('transform', `translate(${-w / 2 + 32},${ry})`)
       .on('click', (ev) => { ev.stopPropagation(); cycleObservation(v); });
-    nameG.append('rect').attr('x', -2).attr('y', -10).attr('width', NODE_W - 48).attr('height', 20).attr('fill', 'transparent');
+    nameG.append('rect').attr('x', -2).attr('y', -10).attr('width', w - 48).attr('height', 20).attr('fill', 'transparent');
     const nameColor = isObs ? (isHard ? 'var(--accent-hard)' : 'var(--accent-soft)') : 'var(--text)';
     nameG.append('text').attr('y', 4).attr('font-size', '12px').attr('font-weight', '600').attr('fill', nameColor)
       .text(v.name + labelSuffix);
 
     // ── Row 2: slider or bars ──
     if (dist) {
-      if (v.outcomes.length === 2) boolSlider(ng, v, dist, h, nodeAccent);
-      else multiNode(ng, v, dist, h, nodeAccent);
+      if (isSliderVar(v)) boolSlider(ng, v, dist, w, h, nodeAccent);
+      else multiNode(ng, v, dist, w, h, nodeAccent);
     }
   }
 }
@@ -577,9 +618,9 @@ function drawEdges(net: BayesianNetwork) {
   }
 
   // Compute slot position along the edge of a node
-  function slotX(nodeX: number, index: number, count: number): number {
+  function slotX(nodeX: number, nw: number, index: number, count: number): number {
     if (count <= 1) return nodeX;
-    const span = Math.min(NODE_W - 30, (count - 1) * 20);
+    const span = Math.min(nw - 30, (count - 1) * 20);
     return nodeX - span / 2 + (span * index) / (count - 1);
   }
 
@@ -590,11 +631,11 @@ function drawEdges(net: BayesianNetwork) {
 
       const outEdges = outgoing.get(p.name)!;
       const outIdx = outEdges.findIndex(e => e.child === cpt.variable);
-      const x1 = slotX(f.x, outIdx, outEdges.length);
+      const x1 = slotX(f.x, nodeW(p), outIdx, outEdges.length);
 
       const inEdges = incoming.get(cpt.variable.name)!;
       const inIdx = inEdges.findIndex(e => e.parent === p);
-      const x2 = slotX(t.x, inIdx, inEdges.length);
+      const x2 = slotX(t.x, nodeW(cpt.variable), inIdx, inEdges.length);
 
       _edgeGroup.append('line')
         .attr('x1', x1).attr('y1', f.y + nodeH(p) / 2)
@@ -686,9 +727,10 @@ function addSliderThumb(
   );
 }
 
-function boolSlider(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Variable, dist: Distribution, h: number, accent: string) {
+function boolSlider(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Variable, dist: Distribution, w: number, h: number, accent: string) {
   const probTrue = dist.get(v.outcomes[0]) ?? 0;
-  const bw = NODE_W - 34, bx = -bw / 2, by = -h / 2 + 33;
+  const showLabels = !isBoolVar(v);
+  const bw = w - 34, bx = -bw / 2, by = -h / 2 + 33;
   const isObs = observationEnabled.has(v.name);
   const fillVar = isObs ? (hardEvidence.has(v.name) ? 'var(--accent-hard)' : 'var(--accent-soft)') : accent;
 
@@ -717,15 +759,14 @@ function boolSlider(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: V
     setSlider(v, Math.max(0, Math.min(1, (local.x - bx) / bw)));
   });
 
-  // Outcome labels (if not standard true/false)
-  const stdBool = new Set(['true', 'false', 'T', 'F', 'yes', 'no', 'Yes', 'No']);
-  if (!stdBool.has(v.outcomes[0]) || !stdBool.has(v.outcomes[1])) {
+  // Show outcome labels for non-boolean 2-outcome vars: Cat1 <slider> Cat2
+  if (showLabels) {
     g.append('text').attr('x', bx).attr('y', by + 20)
-      .attr('font-size', '8px').attr('fill', 'var(--text-dim)').attr('text-anchor', 'start')
-      .text(v.outcomes[1]);
+      .attr('font-size', '9px').attr('fill', 'var(--text-dim)').attr('text-anchor', 'start')
+      .text(v.outcomes[1]); // left = "false" equivalent
     g.append('text').attr('x', bx + bw).attr('y', by + 20)
-      .attr('font-size', '8px').attr('fill', 'var(--text-dim)').attr('text-anchor', 'end')
-      .text(v.outcomes[0]);
+      .attr('font-size', '9px').attr('fill', 'var(--text-dim)').attr('text-anchor', 'end')
+      .text(v.outcomes[0]); // right = "true" equivalent
   }
 
   // Thumb (click-without-drag = clear when observed)
@@ -744,11 +785,11 @@ function boolSlider(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: V
   ]);
 }
 
-function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Variable, dist: Distribution, h: number, accent: string) {
+function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Variable, dist: Distribution, w: number, h: number, accent: string) {
   const isObs = observationEnabled.has(v.name);
-  const tableW = NODE_W - 16;
+  const tableW = w - 16;
   const tableH = v.outcomes.length * NODE_H_PER_OUTCOME;
-  const tableX = -NODE_W / 2 + 8;
+  const tableX = -w / 2 + 8;
   const tableY = -h / 2 + 26;
 
   // Use foreignObject for proper HTML table layout
