@@ -327,6 +327,34 @@ function drawEdges(net: BayesianNetwork) {
   }
 }
 
+/** Reusable snap-zone targets at the ends of a slider bar. */
+function addSnapZones(
+  g: d3.Selection<SVGGElement, unknown, null, undefined>,
+  bx: number, by: number, bw: number, barH: number,
+  labels: Array<{ x: number; text: string; action: () => void }>,
+) {
+  for (const { x, text, action } of labels) {
+    const sz = g.append('g').attr('class', 'cz')
+      .attr('transform', `translate(${x},${by + barH / 2})`)
+      .attr('cursor', 'pointer').attr('opacity', 0)
+      .on('click', (ev) => { ev.stopPropagation(); action(); });
+    sz.append('circle').attr('r', 9)
+      .attr('fill', 'var(--accent)').attr('opacity', 0.25);
+    sz.append('circle').attr('r', 5)
+      .attr('fill', 'var(--accent)').attr('opacity', 0.5);
+    sz.append('title').text(text);
+
+    // Show on hover near the zone (use a wider invisible hit area)
+    const hit = g.append('rect').attr('class', 'cz')
+      .attr('x', x - 16).attr('y', by - 6).attr('width', 32).attr('height', barH + 12)
+      .attr('fill', 'transparent').attr('cursor', 'pointer')
+      .on('mouseenter', () => sz.attr('opacity', 1))
+      .on('mouseleave', () => sz.attr('opacity', 0))
+      .on('click', (ev) => { ev.stopPropagation(); action(); });
+    hit.append('title').text(text);
+  }
+}
+
 function boolSlider(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Variable, dist: Distribution, h: number) {
   const probTrue = dist.get(v.outcomes[0]) ?? 0;
   const bw = NODE_W - 34, bx = -bw / 2, by = -h / 2 + 33;
@@ -357,6 +385,12 @@ function boolSlider(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: V
     .on('drag', function (e) { d3.select(this).attr('cx', Math.max(bx, Math.min(bx + bw, e.x))); })
     .on('end', function (e) { setSlider(v, (Math.max(bx, Math.min(bx + bw, e.x)) - bx) / bw); })
   );
+
+  // Snap zones at 0% (false) and 100% (true)
+  addSnapZones(g, bx, by, bw, 10, [
+    { x: bx, text: `Click to observe as ${v.outcomes[1]}`, action: () => { hardEvidence.set(v.name, v.outcomes[1]); softEvidence.delete(v.name); observationEnabled.add(v.name); render(); } },
+    { x: bx + bw, text: `Click to observe as ${v.outcomes[0]}`, action: () => { hardEvidence.set(v.name, v.outcomes[0]); softEvidence.delete(v.name); observationEnabled.add(v.name); render(); } },
+  ]);
 }
 
 function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Variable, dist: Distribution, h: number) {
@@ -391,6 +425,12 @@ function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Va
       .attr('cx', bx + bw * thumbPos).attr('cy', by + 3).attr('r', 5)
       .attr('fill', 'var(--thumb)').attr('stroke', 'var(--fill-bar)').attr('stroke-width', 1.5)
       .attr('cursor', 'ew-resize').attr('opacity', isObs ? 1 : 0.3);
+
+    // Snap zones at 0% and 100% for this outcome
+    addSnapZones(g, bx, by, bw, 6, [
+      { x: bx, text: `Click to exclude ${o}`, action: () => { cycleOutcome(v, i); /* sets to 0% if currently at 100% */ hardEvidence.delete(v.name); const w = new Map<string, number>(); v.outcomes.forEach((x, j) => w.set(x, j === i ? 0 : 1 / (v.outcomes.length - 1))); softEvidence.set(v.name, w); observationEnabled.add(v.name); render(); } },
+      { x: bx + bw, text: `Click to observe as ${o}`, action: () => { hardEvidence.set(v.name, o); softEvidence.delete(v.name); observationEnabled.add(v.name); render(); } },
+    ]);
 
     const idx = i;
     thumb.call(d3.drag<SVGCircleElement, unknown>()
