@@ -21,6 +21,8 @@ interface SerializedState {
   h?: Record<string, string>;                          // hard evidence
   e?: Record<string, Record<string, number>>;          // soft evidence
   o?: string[];                                        // enabled observations
+  z?: { x: number; y: number; k: number };             // zoom transform (translateX, translateY, scale)
+  p?: Record<string, { x: number; y: number }>;        // node positions (if manually moved)
 }
 
 async function compress(data: string): Promise<string> {
@@ -55,6 +57,16 @@ function saveStateToHash() {
       if (Object.keys(state.e).length === 0) delete state.e;
     }
     if (observationEnabled.size > 0) state.o = [...observationEnabled];
+    // Zoom transform
+    if (_svg) {
+      const t = d3.zoomTransform(_svg.node()!);
+      if (t.k !== 1 || t.x !== 0 || t.y !== 0) state.z = { x: Math.round(t.x), y: Math.round(t.y), k: +t.k.toFixed(3) };
+    }
+    // Node positions (only if any were manually moved)
+    if (nodePositions.size > 0) {
+      state.p = {};
+      for (const [k, v] of nodePositions) state.p[k] = { x: Math.round(v.x), y: Math.round(v.y) };
+    }
     try {
       const encoded = await compress(JSON.stringify(state));
       history.replaceState(null, '', '#' + encoded);
@@ -87,10 +99,24 @@ async function loadStateFromHash(): Promise<boolean> {
     softEvidence = new Map(Object.entries(state.e ?? {}).map(([k, v]) => [k, new Map(Object.entries(v))]));
     observationEnabled = new Set(state.o ?? []);
     rememberedHard = new Map(); rememberedSoft = new Map();
-    nodePositions = new Map();
+
+    // Restore node positions (or auto-layout if none saved)
+    if (state.p) {
+      nodePositions = new Map(Object.entries(state.p));
+    } else {
+      nodePositions = new Map();
+    }
 
     document.getElementById('network-name')!.textContent = network.name;
-    autoLayout();
+    if (nodePositions.size === 0) autoLayout();
+    else render();
+
+    // Restore zoom transform after render creates the SVG
+    if (state.z && _svg && _zoomBehavior) {
+      const t = d3.zoomIdentity.translate(state.z.x, state.z.y).scale(state.z.k);
+      _svg.call(_zoomBehavior.transform, t);
+    }
+
     return true;
   } catch {
     return false;
@@ -488,13 +514,14 @@ function addSnapZones(
 }
 
 /**
- * Create a draggable slider thumb. When observation is snapped (hard evidence),
- * hovering the thumb shows an X; clicking without dragging clears.
+ * Create a draggable slider thumb.
+ * When observation is active (isObs), hovering shows an X overlay;
+ * clicking without dragging clears the observation.
  */
 function addSliderThumb(
   g: d3.Selection<SVGGElement, unknown, null, undefined>,
   cx: number, cy: number, r: number,
-  fillVar: string, isObs: boolean, isSnapped: boolean,
+  fillVar: string, isObs: boolean,
   onDrag: (x: number) => void, onEnd: (x: number) => void, onClear: () => void,
   minX: number, maxX: number,
 ) {
@@ -505,7 +532,7 @@ function addSliderThumb(
     .attr('fill', 'var(--thumb)').attr('stroke', fillVar).attr('stroke-width', 2)
     .attr('cursor', 'ew-resize').attr('opacity', isObs ? 1 : 0.4);
 
-  // X overlay (hidden, shown on hover when snapped)
+  // X overlay (shown on hover when any observation is active)
   const xOverlay = thumbG.append('g')
     .attr('transform', `translate(${cx},${cy})`)
     .attr('opacity', 0).attr('pointer-events', 'none');
@@ -515,7 +542,7 @@ function addSliderThumb(
   xOverlay.append('line').attr('x1', 3).attr('y1', -3).attr('x2', -3).attr('y2', 3)
     .attr('stroke', 'var(--accent-hard)').attr('stroke-width', 2).attr('stroke-linecap', 'round');
 
-  if (isSnapped) {
+  if (isObs) {
     circle
       .on('mouseenter', () => xOverlay.attr('opacity', 1))
       .on('mouseleave', () => xOverlay.attr('opacity', 0));
@@ -533,7 +560,7 @@ function addSliderThumb(
       onDrag(nx);
     })
     .on('end', function (e) {
-      if (!dragged && isSnapped) { onClear(); return; }
+      if (!dragged && isObs) { onClear(); return; }
       if (dragged) { onEnd(Math.max(minX, Math.min(maxX, e.x))); }
     })
   );
@@ -570,10 +597,9 @@ function boolSlider(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: V
     setSlider(v, Math.max(0, Math.min(1, (local.x - bx) / bw)));
   });
 
-  // Thumb (click-without-drag = clear when snapped)
-  const isSnapped = isObs && hardEvidence.has(v.name);
+  // Thumb (click-without-drag = clear when observed)
   const clearObs = () => { hardEvidence.delete(v.name); softEvidence.delete(v.name); observationEnabled.delete(v.name); render(); };
-  addSliderThumb(g, bx + bw * tr, by + 5, 7, fillVar, isObs, isSnapped,
+  addSliderThumb(g, bx + bw * tr, by + 5, 7, fillVar, isObs,
     () => {}, (x) => setSlider(v, (x - bx) / bw), clearObs, bx, bx + bw);
 
   // Snap zones at endpoints (only shown when not already snapped there)
@@ -656,7 +682,7 @@ function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Va
       }
       render();
     };
-    addSliderThumb(g, bx + bw * thumbPos, by + 3, 5, 'var(--fill-bar)', isObs, isSnapped,
+    addSliderThumb(g, bx + bw * thumbPos, by + 3, 5, 'var(--fill-bar)', isObs,
       () => {}, setMultiSlider, clearMulti, bx, bx + bw);
 
     // Snap zones (only when not snapped)
