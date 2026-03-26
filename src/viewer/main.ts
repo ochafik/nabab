@@ -777,22 +777,49 @@ function drawEdges(net: BayesianNetwork) {
     return nodeX - span / 2 + (span * index) / (count - 1);
   }
 
-  // Draw each edge using its slot indices
+  // Compute attachment point on node edge closest to the other node
+  function attach(
+    nodePos: { x: number; y: number }, nw: number, nh: number,
+    otherPos: { x: number; y: number },
+    slotIdx: number, slotCount: number, isOutgoing: boolean,
+  ): { x: number; y: number } {
+    const dx = otherPos.x - nodePos.x;
+    const dy = otherPos.y - nodePos.y;
+    const hw = nw / 2, hh = nh / 2;
+
+    // Determine which edge to attach to based on angle
+    // Prefer top/bottom for mostly-vertical, left/right for mostly-horizontal
+    const absRatio = Math.abs(dy) * hw / (Math.abs(dx) * hh + 0.001);
+
+    if (absRatio > 1) {
+      // Vertical: top or bottom edge with slot distribution
+      const ySign = dy > 0 ? 1 : -1;
+      return { x: slotX(nodePos.x, nw, slotIdx, slotCount), y: nodePos.y + hh * ySign };
+    } else {
+      // Horizontal: left or right edge, distribute vertically
+      const xSign = dx > 0 ? 1 : -1;
+      const slotY = slotCount <= 1 ? nodePos.y
+        : nodePos.y - hh * 0.6 + (hh * 1.2 * slotIdx) / (slotCount - 1);
+      return { x: nodePos.x + hw * xSign, y: slotY };
+    }
+  }
+
+  // Draw each edge using best attachment points
   for (const cpt of net.cpts) {
     for (const p of cpt.parents) {
       const f = nodePositions.get(p.name)!, t = nodePositions.get(cpt.variable.name)!;
 
       const outEdges = outgoing.get(p.name)!;
       const outIdx = outEdges.findIndex(e => e.child === cpt.variable);
-      const x1 = slotX(f.x, nodeW(p), outIdx, outEdges.length);
+      const from = attach(f, nodeW(p), nodeH(p), t, outIdx, outEdges.length, true);
 
       const inEdges = incoming.get(cpt.variable.name)!;
       const inIdx = inEdges.findIndex(e => e.parent === p);
-      const x2 = slotX(t.x, nodeW(cpt.variable), inIdx, inEdges.length);
+      const to = attach(t, nodeW(cpt.variable), nodeH(cpt.variable), f, inIdx, inEdges.length, false);
 
       _edgeGroup.append('line')
-        .attr('x1', x1).attr('y1', f.y + nodeH(p) / 2)
-        .attr('x2', x2).attr('y2', t.y - nodeH(cpt.variable) / 2 - 4)
+        .attr('x1', from.x).attr('y1', from.y)
+        .attr('x2', to.x).attr('y2', to.y - 4)
         .attr('stroke', 'var(--edge)').attr('stroke-width', 1.5).attr('marker-end', 'url(#arr)');
     }
   }
