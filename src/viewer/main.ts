@@ -402,6 +402,9 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
       : `hsl(${hue}, 30%, ${isDark ? 22 : 94}%)`;
     const borderCol = isHard ? 'var(--accent-hard)' : isSoft ? 'var(--accent-soft)'
       : `hsl(${hue}, 35%, ${isDark ? 45 : 65}%)`;
+    // Contrasting accent for sliders/bars (same hue, higher saturation, mid lightness)
+    const nodeAccent = isHard ? 'var(--accent-hard)' : isSoft ? 'var(--accent-soft)'
+      : `hsl(${hue}, 55%, ${isDark ? 55 : 45}%)`;
 
     ng.append('rect').attr('x', -NODE_W / 2).attr('y', -h / 2)
       .attr('width', NODE_W).attr('height', h).attr('rx', 8)
@@ -441,8 +444,8 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
 
     // ── Row 2: slider or bars ──
     if (dist) {
-      if (v.outcomes.length === 2) boolSlider(ng, v, dist, h);
-      else multiNode(ng, v, dist, h);
+      if (v.outcomes.length === 2) boolSlider(ng, v, dist, h, nodeAccent);
+      else multiNode(ng, v, dist, h, nodeAccent);
     }
   }
 }
@@ -582,11 +585,11 @@ function addSliderThumb(
   );
 }
 
-function boolSlider(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Variable, dist: Distribution, h: number) {
+function boolSlider(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Variable, dist: Distribution, h: number, accent: string) {
   const probTrue = dist.get(v.outcomes[0]) ?? 0;
   const bw = NODE_W - 34, bx = -bw / 2, by = -h / 2 + 33;
   const isObs = observationEnabled.has(v.name);
-  const fillVar = isObs ? (hardEvidence.has(v.name) ? 'var(--fill-bar-hard)' : 'var(--fill-bar-soft)') : 'var(--fill-bar)';
+  const fillVar = isObs ? (hardEvidence.has(v.name) ? 'var(--accent-hard)' : 'var(--accent-soft)') : accent;
 
   // Compute thumb position: evidence when observed, posterior otherwise
   let tr: number;
@@ -629,7 +632,7 @@ function boolSlider(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: V
   ]);
 }
 
-function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Variable, dist: Distribution, h: number) {
+function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Variable, dist: Distribution, h: number, accent: string) {
   const bw = NODE_W - 50, bx = -NODE_W / 2 + 10;
   const isObs = observationEnabled.has(v.name);
   let y = -h / 2 + 30;
@@ -658,7 +661,7 @@ function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Va
       .attr('rx', 3).attr('fill', 'var(--bg-bar)').attr('pointer-events', 'none');
     if (thumbPos > 0.005)
       g.append('rect').attr('x', bx).attr('y', by).attr('width', Math.max(3, bw * thumbPos)).attr('height', 6)
-        .attr('rx', 3).attr('fill', 'var(--fill-bar)').attr('opacity', 0.6).attr('pointer-events', 'none');
+        .attr('rx', 3).attr('fill', accent).attr('opacity', 0.6).attr('pointer-events', 'none');
     const outcomeIdx = i;
     barHit.on('click', (ev) => {
       ev.stopPropagation();
@@ -698,7 +701,7 @@ function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Va
       }
       render();
     };
-    addSliderThumb(g, bx + bw * thumbPos, by + 3, 5, 'var(--fill-bar)', isObs,
+    addSliderThumb(g, bx + bw * thumbPos, by + 3, 5, accent, isObs,
       () => {}, setMultiSlider, clearMulti, bx, bx + bw);
 
     // Snap zones (only when not snapped)
