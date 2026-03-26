@@ -793,16 +793,17 @@ function drawEdges(net: BayesianNetwork) {
     }
   }
 
-  // Group by (node, side, dir) — use Map<string, number[]> storing indices into allEdges
+  // Group by (node, side) — all connections on the same side share slots
   const groups = new Map<string, number[]>();
   for (let i = 0; i < allEdges.length; i++) {
     const e = allEdges[i];
-    const fk = e.pn + '|' + e.ps + '|o';
-    const tk = e.cn + '|' + e.cs + '|i';
+    const fk = e.pn + '|' + e.ps;
+    const tk = e.cn + '|' + e.cs;
     if (!groups.has(fk)) groups.set(fk, []);
     groups.get(fk)!.push(i);
     if (!groups.has(tk)) groups.set(tk, []);
-    groups.get(tk)!.push(i);
+    // Avoid duplicate if same edge maps to same key (self-loop edge, unlikely)
+    if (fk !== tk || !groups.get(tk)!.includes(i)) groups.get(tk)!.push(i);
   }
 
   // Sort each group by projection of other-endpoint onto tangent
@@ -821,8 +822,8 @@ function drawEdges(net: BayesianNetwork) {
 
   // Build slot index lookup: edgeIdx → { fromSlot, fromCount, toSlot, toCount }
   const slots = allEdges.map((e, i) => {
-    const fk = e.pn + '|' + e.ps + '|o';
-    const tk = e.cn + '|' + e.cs + '|i';
+    const fk = e.pn + '|' + e.ps;
+    const tk = e.cn + '|' + e.cs;
     const fg = groups.get(fk)!;
     const tg = groups.get(tk)!;
     return {
