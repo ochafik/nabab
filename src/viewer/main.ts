@@ -777,51 +777,103 @@ function drawEdges(net: BayesianNetwork) {
     return nodeX - span / 2 + (span * index) / (count - 1);
   }
 
-  // Compute attachment point on node edge closest to the other node
-  function attach(
-    nodePos: { x: number; y: number }, nw: number, nh: number,
-    otherPos: { x: number; y: number },
-    slotIdx: number, slotCount: number, isOutgoing: boolean,
-  ): { x: number; y: number } {
-    const dx = otherPos.x - nodePos.x;
-    const dy = otherPos.y - nodePos.y;
-    const hw = nw / 2, hh = nh / 2;
+  // For each node+side, collect which edges attach there so we can space them
+  type Side = 'top' | 'bottom' | 'left' | 'right';
+  interface EdgeInfo { parent: Variable; child: Variable; fromSide: Side; toSide: Side; }
 
-    // Determine which edge to attach to based on angle
-    // Prefer top/bottom for mostly-vertical, left/right for mostly-horizontal
-    const absRatio = Math.abs(dy) * hw / (Math.abs(dx) * hh + 0.001);
-
-    if (absRatio > 1) {
-      // Vertical: top or bottom edge with slot distribution
-      const ySign = dy > 0 ? 1 : -1;
-      return { x: slotX(nodePos.x, nw, slotIdx, slotCount), y: nodePos.y + hh * ySign };
-    } else {
-      // Horizontal: left or right edge, distribute vertically
-      const xSign = dx > 0 ? 1 : -1;
-      const slotY = slotCount <= 1 ? nodePos.y
-        : nodePos.y - hh * 0.6 + (hh * 1.2 * slotIdx) / (slotCount - 1);
-      return { x: nodePos.x + hw * xSign, y: slotY };
-    }
+  function getSide(from: { x: number; y: number }, fw: number, fh: number,
+                   to: { x: number; y: number }): Side {
+    const dx = to.x - from.x, dy = to.y - from.y;
+    const hw = fw / 2, hh = fh / 2;
+    if (Math.abs(dy) * hw > Math.abs(dx) * hh) return dy > 0 ? 'bottom' : 'top';
+    return dx > 0 ? 'right' : 'left';
   }
 
-  // Draw each edge using best attachment points
+  // Pre-compute side for every edge
+  const edgeInfos: EdgeInfo[] = [];
   for (const cpt of net.cpts) {
     for (const p of cpt.parents) {
       const f = nodePositions.get(p.name)!, t = nodePositions.get(cpt.variable.name)!;
-
-      const outEdges = outgoing.get(p.name)!;
-      const outIdx = outEdges.findIndex(e => e.child === cpt.variable);
-      const from = attach(f, nodeW(p), nodeH(p), t, outIdx, outEdges.length, true);
-
-      const inEdges = incoming.get(cpt.variable.name)!;
-      const inIdx = inEdges.findIndex(e => e.parent === p);
-      const to = attach(t, nodeW(cpt.variable), nodeH(cpt.variable), f, inIdx, inEdges.length, false);
-
-      _edgeGroup.append('line')
-        .attr('x1', from.x).attr('y1', from.y)
-        .attr('x2', to.x).attr('y2', to.y - 4)
-        .attr('stroke', 'var(--edge)').attr('stroke-width', 1.5).attr('marker-end', 'url(#arr)');
+      edgeInfos.push({
+        parent: p, child: cpt.variable,
+        fromSide: getSide(f, nodeW(p), nodeH(p), t),
+        toSide: getSide(t, nodeW(cpt.variable), nodeH(cpt.variable), f),
+      });
     }
+  }
+
+  // Group edges by (node, side) to distribute slots
+  const sideEdges = new Map<string, EdgeInfo[]>(); // "varName:side" → edges
+  for (const ei of edgeInfos) {
+    const fk = `${ei.parent.name}:${ei.fromSide}`;
+    const tk = `${ei.child.name}:${ei.toSide}`;
+    if (!sideEdges.has(fk)) sideEdges.set(fk, []);
+    sideEdges.get(fk)!.push(ei);
+    if (!sideEdges.has(tk)) sideEdges.set(tk, []);
+    sideEdges.get(tk)!.push(ei);
+  }
+
+  // Sort each side group by the OTHER endpoint position (perpendicular axis)
+  for (const [key, edges] of sideEdges) {
+    const [varName, side] = key.split(':');
+    const isFrom = edges[0]?.parent.name === varName;
+    if (side === 'top' || side === 'bottom') {
+      // Sort by other node's x
+      edges.sort((a, b) => {
+        const oa = nodePositions.get(isFrom ? a.child.name : a.parent.name)!.x;
+        const ob = nodePositions.get(isFrom ? b.child.name : b.parent.name)!.x;
+        return oa - ob;
+      });
+    } else {
+      // Sort by other node's y
+      edges.sort((a, b) => {
+        const oa = nodePositions.get(isFrom ? a.child.name : a.parent.name)!.y;
+        const ob = nodePositions.get(isFrom ? b.child.name : b.parent.name)!.y;
+        return oa - ob;
+      });
+    }
+  }
+
+  function getSlotPos(
+    pos: { x: number; y: number }, nw: number, nh: number,
+    side: Side, slotIdx: number, slotCount: number,
+  ): { x: number; y: number } {
+    const hw = nw / 2, hh = nh / 2;
+    const spacing = 12;
+    if (side === 'top' || side === 'bottom') {
+      const span = Math.min(nw - 20, (slotCount - 1) * spacing);
+      const x = slotCount <= 1 ? pos.x : pos.x - span / 2 + span * slotIdx / (slotCount - 1);
+      return { x, y: pos.y + (side === 'bottom' ? hh : -hh) };
+    } else {
+      const span = Math.min(nh - 10, (slotCount - 1) * spacing);
+      const y = slotCount <= 1 ? pos.y : pos.y - span / 2 + span * slotIdx / (slotCount - 1);
+      return { x: pos.x + (side === 'right' ? hw : -hw), y };
+    }
+  }
+
+  // Draw edges
+  for (const ei of edgeInfos) {
+    const f = nodePositions.get(ei.parent.name)!, t = nodePositions.get(ei.child.name)!;
+
+    const fKey = `${ei.parent.name}:${ei.fromSide}`;
+    const fEdges = sideEdges.get(fKey)!;
+    const fIdx = fEdges.indexOf(ei);
+    const from = getSlotPos(f, nodeW(ei.parent), nodeH(ei.parent), ei.fromSide, fIdx, fEdges.length);
+
+    const tKey = `${ei.child.name}:${ei.toSide}`;
+    const tEdges = sideEdges.get(tKey)!;
+    const tIdx = tEdges.indexOf(ei);
+    const to = getSlotPos(t, nodeW(ei.child), nodeH(ei.child), ei.toSide, tIdx, tEdges.length);
+
+    // Offset arrow tip slightly so marker doesn't overlap the node border
+    const dx = to.x - from.x, dy = to.y - from.y;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const tipOffset = 4;
+
+    _edgeGroup.append('line')
+      .attr('x1', from.x).attr('y1', from.y)
+      .attr('x2', to.x - dx / len * tipOffset).attr('y2', to.y - dy / len * tipOffset)
+      .attr('stroke', 'var(--edge)').attr('stroke-width', 1.5).attr('marker-end', 'url(#arr)');
   }
 }
 
