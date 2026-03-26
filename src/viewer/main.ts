@@ -390,7 +390,8 @@ function measureTextWidths(
     // Measure header text
     let headerText = v.name;
     if (dist && isSliderVar(v)) {
-      headerText += `: ${Math.round((dist.get(v.outcomes[0]) ?? 0) * 100)}%`;
+      const p0 = Math.round((dist.get(v.outcomes[0]) ?? 0) * 100);
+      headerText += isBoolVar(v) ? `: ${p0}%` : `: ${p0}% ${v.outcomes[0]}`;
     } else if (dist) {
       let maxOut = v.outcomes[0], maxP = 0;
       for (const o of v.outcomes) { const p = dist.get(o) ?? 0; if (p > maxP) { maxP = p; maxOut = o; } }
@@ -586,7 +587,7 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
     } else if (dist && isSliderVar(v)) {
       // 2-outcome: show P(outcomes[0]) to match slider (right = outcomes[0])
       const p0 = Math.round((dist.get(v.outcomes[0]) ?? 0) * 100);
-      labelSuffix = `: ${p0}%`;
+      labelSuffix = isBoolVar(v) ? `: ${p0}%` : `: ${p0}% ${v.outcomes[0]}`;
     } else if (dist) {
       // Categorical: show most likely outcome
       let maxOut = v.outcomes[0], maxP = 0;
