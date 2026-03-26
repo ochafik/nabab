@@ -589,7 +589,7 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
       const p0 = dist.get(v.outcomes[0]) ?? 0;
       const pct0 = Math.round(p0 * 100);
       if (isBoolVar(v)) {
-        labelSuffix = pct0 === 100 ? '' : pct0 === 0 ? '' : `: ${pct0}%`;
+        labelSuffix = (pct0 === 100 || pct0 === 0) && !isObs ? '' : `: ${pct0}%`;
       } else if (pct0 === 0) {
         // 0% of outcomes[0] → just say outcomes[1]
         labelSuffix = `: ${v.outcomes[1]}`;
@@ -830,73 +830,91 @@ function boolSlider(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: V
 
 function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Variable, dist: Distribution, w: number, h: number, accent: string) {
   const isObs = observationEnabled.has(v.name);
-  const tableW = w - 16;
-  const tableH = v.outcomes.length * NODE_H_PER_OUTCOME;
-  const tableX = -w / 2 + 8;
-  const tableY = -h / 2 + 26;
+  const clearAll = () => { hardEvidence.delete(v.name); softEvidence.delete(v.name); observationEnabled.delete(v.name); render(); };
 
-  // Use foreignObject for proper HTML table layout
-  const fo = g.append('foreignObject')
-    .attr('x', tableX).attr('y', tableY)
-    .attr('width', tableW).attr('height', tableH)
-    .attr('class', 'cz');
+  // Layout: label (right-aligned) ... bar+thumb ... pct
+  const pctColW = 32;
+  const labelColW = Math.max(...v.outcomes.map(o => o.length)) * 6.5 + 4;
+  const barPad = 8;
+  const bw = w - 16 - labelColW - barPad - pctColW;
+  const bx = -w / 2 + 8 + labelColW + barPad;
 
-  const table = fo.append('xhtml:table')
-    .style('width', '100%').style('border-collapse', 'collapse')
-    .style('font-size', '10px').style('font-family', 'inherit');
+  let y = -h / 2 + 30;
 
   for (let i = 0; i < v.outcomes.length; i++) {
     const o = v.outcomes[i];
     const prob = dist.get(o) ?? 0;
     const pct = Math.round(prob * 100);
+    const by = y + 2;
 
-    const tr = table.append('xhtml:tr').style('height', `${NODE_H_PER_OUTCOME}px`);
+    // Thumb position: evidence when observed, posterior otherwise
+    const evidenceW = isObs && softEvidence.has(v.name) ? (softEvidence.get(v.name)!.get(o) ?? prob) : prob;
+    const thumbPos = isObs && hardEvidence.has(v.name) ? (hardEvidence.get(v.name) === o ? 1 : 0) : evidenceW;
 
-    // Label column (right-aligned, clickable)
-    tr.append('xhtml:td')
-      .style('text-align', 'right').style('padding-right', '6px')
-      .style('color', 'var(--text-secondary)').style('cursor', 'pointer')
-      .style('white-space', 'nowrap').style('width', '1%')
-      .text(o)
-      .on('click', (ev: Event) => { ev.stopPropagation(); cycleOutcome(v, i); });
+    // Label (right-aligned, clickable)
+    const lg = g.append('g').attr('class', 'cz').attr('cursor', 'pointer')
+      .on('click', (ev) => { ev.stopPropagation(); cycleOutcome(v, i); });
+    lg.append('rect').attr('x', -w / 2 + 6).attr('y', by - 8).attr('width', labelColW + 4).attr('height', 16).attr('fill', 'transparent');
+    lg.append('text').attr('x', bx - barPad).attr('y', by + 4)
+      .attr('font-size', '10px').attr('fill', 'var(--text-secondary)').attr('text-anchor', 'end').text(o);
 
-    // Slider column
-    const sliderTd = tr.append('xhtml:td').style('position', 'relative');
-    const input = sliderTd.append('xhtml:input')
-      .attr('type', 'range').attr('min', '0').attr('max', '1000')
-      .attr('value', String(Math.round(prob * 1000)))
-      .style('width', '100%').style('height', '6px')
-      .style('accent-color', accent).style('cursor', 'pointer')
-      .style('-webkit-appearance', 'none').style('appearance', 'none')
-      .style('background', 'var(--bg-bar)').style('border-radius', '3px')
-      .style('outline', 'none');
+    // Percentage (right side)
+    g.append('text').attr('x', w / 2 - 8).attr('y', by + 4)
+      .attr('font-size', '10px').attr('font-weight', '600').attr('fill', 'var(--text)').attr('text-anchor', 'end')
+      .text(`${pct}%`);
+
+    // Bar background (click-to-jump)
+    const barHit = g.append('rect').attr('x', bx).attr('y', by - 4).attr('width', bw).attr('height', 14)
+      .attr('fill', 'transparent').attr('cursor', 'pointer').attr('class', 'cz');
+    g.append('rect').attr('x', bx).attr('y', by).attr('width', bw).attr('height', 6)
+      .attr('rx', 3).attr('fill', 'var(--bg-bar)').attr('pointer-events', 'none');
+    if (thumbPos > 0.005)
+      g.append('rect').attr('x', bx).attr('y', by).attr('width', Math.max(3, bw * thumbPos)).attr('height', 6)
+        .attr('rx', 3).attr('fill', accent).attr('opacity', 0.6).attr('pointer-events', 'none');
+
+    // Click-to-jump on bar
     const idx = i;
-    (input.node() as HTMLInputElement).addEventListener('input', (ev) => {
-      ev.stopPropagation();
-      const ratio = Number((ev.target as HTMLInputElement).value) / 1000;
+    const setMulti = (ratio: number) => {
       hardEvidence.delete(v.name); observationEnabled.add(v.name);
       if (!softEvidence.has(v.name)) softEvidence.set(v.name, new Map(v.outcomes.map(x => [x, 1 / v.outcomes.length])));
-      const w = softEvidence.get(v.name)!;
-      const otherTotal = [...w].reduce((s, [k, val]) => k === v.outcomes[idx] ? s : s + val, 0);
-      w.set(v.outcomes[idx], ratio);
+      const wt = softEvidence.get(v.name)!;
+      const otherTotal = [...wt].reduce((s, [k, val]) => k === v.outcomes[idx] ? s : s + val, 0);
+      wt.set(v.outcomes[idx], ratio);
       if (otherTotal > 0) {
         const sc = Math.max(0, 1 - ratio) / otherTotal;
-        for (let j = 0; j < v.outcomes.length; j++) if (j !== idx) w.set(v.outcomes[j], (w.get(v.outcomes[j]) ?? 0) * sc);
+        for (let j = 0; j < v.outcomes.length; j++) if (j !== idx) wt.set(v.outcomes[j], (wt.get(v.outcomes[j]) ?? 0) * sc);
       }
       if (ratio > 0.995) { hardEvidence.set(v.name, v.outcomes[idx]); softEvidence.delete(v.name); }
       else if (ratio < 0.005) {
-        const allUniform = [...w.values()].every((x, _, a) => Math.abs(x - a[0]) < 0.02);
+        const allUniform = [...wt.values()].every((x, _, a) => Math.abs(x - a[0]) < 0.02);
         if (allUniform) { softEvidence.delete(v.name); observationEnabled.delete(v.name); }
       }
       render();
+    };
+
+    barHit.on('click', (ev) => {
+      ev.stopPropagation();
+      const pt = (ev.target as SVGElement).ownerSVGElement!.createSVGPoint();
+      pt.x = ev.clientX; pt.y = ev.clientY;
+      const local = pt.matrixTransform((ev.target as SVGGraphicsElement).getScreenCTM()!.inverse());
+      setMulti(Math.max(0, Math.min(1, (local.x - bx) / bw)));
     });
 
-    // Percentage column
-    tr.append('xhtml:td')
-      .style('text-align', 'right').style('padding-left', '4px')
-      .style('font-weight', '600').style('color', 'var(--text)')
-      .style('white-space', 'nowrap').style('width', '1%')
-      .text(`${pct}%`);
+    // Thumb with clear-on-click
+    addSliderThumb(g, bx + bw * thumbPos, by + 3, 5, accent, isObs,
+      () => {}, (x) => setMulti((x - bx) / bw), clearAll, bx, bx + bw);
+
+    // Snap zones
+    const isSnapped100 = isObs && hardEvidence.get(v.name) === o;
+    const isSnapped0 = isObs && softEvidence.has(v.name) && (softEvidence.get(v.name)!.get(o) ?? 1) < 0.01;
+    addSnapZones(g, bx, by, bw, 6, [
+      { x: bx, label: `Click to exclude ${o}`, isSnapped: isSnapped0,
+        snap: () => { hardEvidence.delete(v.name); const wt = new Map<string, number>(); v.outcomes.forEach((x, j) => wt.set(x, j === i ? 0 : 1 / (v.outcomes.length - 1))); softEvidence.set(v.name, wt); observationEnabled.add(v.name); render(); } },
+      { x: bx + bw, label: `Click to observe as ${o}`, isSnapped: isSnapped100,
+        snap: () => { hardEvidence.set(v.name, o); softEvidence.delete(v.name); observationEnabled.add(v.name); render(); } },
+    ]);
+
+    y += NODE_H_PER_OUTCOME;
   }
 }
 
