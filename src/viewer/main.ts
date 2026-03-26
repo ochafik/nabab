@@ -813,25 +813,27 @@ function drawEdges(net: BayesianNetwork) {
     sideEdges.get(tk)!.push(ei);
   }
 
-  // Sort each side group by the OTHER endpoint position (perpendicular axis)
+  // Sort each side group by projecting the other endpoint onto the
+  // edge's tangent vector, so slots match the angular order of connections.
+  // Tangent vectors: top/bottom → (1,0), left/right → (0,1)
+  // We project (otherPos - nodePos) onto the tangent to get a scalar for sorting.
   for (const [key, edges] of sideEdges) {
-    const [varName, side] = key.split(':');
-    const isFrom = edges[0]?.parent.name === varName;
-    if (side === 'top' || side === 'bottom') {
-      // Sort by other node's x
-      edges.sort((a, b) => {
-        const oa = nodePositions.get(isFrom ? a.child.name : a.parent.name)!.x;
-        const ob = nodePositions.get(isFrom ? b.child.name : b.parent.name)!.x;
-        return oa - ob;
-      });
-    } else {
-      // Sort by other node's y
-      edges.sort((a, b) => {
-        const oa = nodePositions.get(isFrom ? a.child.name : a.parent.name)!.y;
-        const ob = nodePositions.get(isFrom ? b.child.name : b.parent.name)!.y;
-        return oa - ob;
-      });
-    }
+    const [varName, side] = key.split(':') as [string, Side];
+    const nodePos = nodePositions.get(varName)!;
+    // Tangent along the edge surface
+    const tx = (side === 'top' || side === 'bottom') ? 1 : 0;
+    const ty = (side === 'left' || side === 'right') ? 1 : 0;
+
+    edges.sort((a, b) => {
+      const isFromA = a.parent.name === varName;
+      const isFromB = b.parent.name === varName;
+      const otherA = nodePositions.get(isFromA ? a.child.name : a.parent.name)!;
+      const otherB = nodePositions.get(isFromB ? b.child.name : b.parent.name)!;
+      // Project vector (other - node) onto tangent
+      const projA = (otherA.x - nodePos.x) * tx + (otherA.y - nodePos.y) * ty;
+      const projB = (otherB.x - nodePos.x) * tx + (otherB.y - nodePos.y) * ty;
+      return projA - projB;
+    });
   }
 
   function getSlotPos(
