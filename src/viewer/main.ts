@@ -133,6 +133,7 @@ document.getElementById('btn-clear-evidence')!.addEventListener('click', () => {
   observationEnabled = new Set(); render();
 });
 document.getElementById('btn-layout')!.addEventListener('click', autoLayout);
+document.getElementById('btn-fit')!.addEventListener('click', fitView);
 
 // Paste XMLBIF
 document.body.addEventListener('paste', (e: ClipboardEvent) => {
@@ -289,12 +290,40 @@ function nodeH(v: Variable) {
 }
 
 let _edgeGroup: d3.Selection<SVGGElement, unknown, null, undefined> | null = null;
+let _zoomBehavior: d3.ZoomBehavior<SVGSVGElement, unknown> | null = null;
+let _svg: d3.Selection<SVGSVGElement, unknown, null, undefined> | null = null;
+
+function fitView() {
+  if (!network || !_zoomBehavior || !_svg) return;
+  const container = document.getElementById('graph-container')!;
+  const W = container.clientWidth, H = container.clientHeight;
+  if (nodePositions.size === 0) return;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const v of network.variables) {
+    const p = nodePositions.get(v.name);
+    if (!p) continue;
+    const h = nodeH(v);
+    minX = Math.min(minX, p.x - NODE_W / 2);
+    maxX = Math.max(maxX, p.x + NODE_W / 2);
+    minY = Math.min(minY, p.y - h / 2);
+    maxY = Math.max(maxY, p.y + h / 2);
+  }
+  const pad = 30;
+  const bw = maxX - minX + pad * 2, bh = maxY - minY + pad * 2;
+  const scale = Math.min(W / bw, H / bh, 2);
+  const tx = W / 2 - (minX + maxX) / 2 * scale;
+  const ty = H / 2 - (minY + maxY) / 2 * scale;
+  _svg.transition().duration(300).call(
+    _zoomBehavior.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+}
 
 function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distribution>) {
   const container = document.getElementById('graph-container')!;
   container.innerHTML = '';
   const W = container.clientWidth, H = container.clientHeight;
-  const svg = d3.select(container).append('svg').attr('width', W).attr('height', H);
+  _svg = d3.select(container).append('svg').attr('width', W).attr('height', H)
+    .style('user-select', 'none');
+  const svg = _svg;
   const defs = svg.append('defs');
   // Drop shadow for nodes
   const shadow = defs.append('filter').attr('id', 'node-shadow').attr('x', '-10%').attr('y', '-10%').attr('width', '130%').attr('height', '140%');
@@ -310,7 +339,14 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
     if (!nodePositions.has(v.name))
       nodePositions.set(v.name, v.position ? { x: v.position.x * 2 + 80, y: v.position.y * 2 + 40 } : { x: W / 2, y: H / 2 });
 
-  _edgeGroup = svg.append('g');
+  // Zoomable/pannable content group
+  const contentG = svg.append('g');
+  _zoomBehavior = d3.zoom<SVGSVGElement, unknown>()
+    .scaleExtent([0.1, 4])
+    .on('zoom', (ev) => contentG.attr('transform', ev.transform));
+  svg.call(_zoomBehavior);
+
+  _edgeGroup = contentG.append('g');
   drawEdges(net);
 
   for (const v of net.variables) {
@@ -321,7 +357,7 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
     const isHard = isObs && hardEvidence.has(v.name);
     const isSoft = isObs && softEvidence.has(v.name);
 
-    const ng = svg.append('g').attr('transform', `translate(${pos.x},${pos.y})`);
+    const ng = contentG.append('g').attr('transform', `translate(${pos.x},${pos.y})`);
 
     // Background
     const borderCol = isHard ? 'var(--accent-hard)' : isSoft ? 'var(--accent-soft)' : 'var(--border-node)';
@@ -423,47 +459,84 @@ function drawEdges(net: BayesianNetwork) {
 }
 
 /**
- * Snap-zone targets at slider endpoints.
- * If already snapped to this end, shows a cross (clear) button instead.
+ * Snap-zone targets at slider endpoints (only when NOT already snapped).
+ * When snapped, the handle itself shows an X on hover; click-without-drag clears.
  */
 function addSnapZones(
   g: d3.Selection<SVGGElement, unknown, null, undefined>,
   bx: number, by: number, bw: number, barH: number,
-  zones: Array<{ x: number; label: string; isSnapped: boolean; snap: () => void; clear: () => void }>,
+  zones: Array<{ x: number; label: string; isSnapped: boolean; snap: () => void }>,
 ) {
   for (const z of zones) {
-    const action = z.isSnapped ? z.clear : z.snap;
-    const tooltip = z.isSnapped ? 'Click to clear observation' : z.label;
-    const color = z.isSnapped ? 'var(--accent-hard)' : 'var(--accent)';
-
-    const sz = g.append('g').attr('class', 'cz')
+    if (z.isSnapped) continue; // snapped → clear is on the handle, not here
+    const sz = g.append('g')
       .attr('transform', `translate(${z.x},${by + barH / 2})`)
-      .attr('cursor', 'pointer').attr('opacity', 0)
-      .on('click', (ev) => { ev.stopPropagation(); action(); });
+      .attr('pointer-events', 'none').attr('opacity', 0);
+    sz.append('circle').attr('r', 9).attr('fill', 'var(--accent)').attr('opacity', 0.25);
+    sz.append('circle').attr('r', 5).attr('fill', 'var(--accent)').attr('opacity', 0.5);
+    sz.append('title').text(z.label);
 
-    if (z.isSnapped) {
-      // Cross (x) icon
-      sz.append('circle').attr('r', 8).attr('fill', color).attr('opacity', 0.2);
-      sz.append('line').attr('x1', -3).attr('y1', -3).attr('x2', 3).attr('y2', 3)
-        .attr('stroke', color).attr('stroke-width', 2).attr('stroke-linecap', 'round');
-      sz.append('line').attr('x1', 3).attr('y1', -3).attr('x2', -3).attr('y2', 3)
-        .attr('stroke', color).attr('stroke-width', 2).attr('stroke-linecap', 'round');
-    } else {
-      // Snap target circle
-      sz.append('circle').attr('r', 9).attr('fill', color).attr('opacity', 0.25);
-      sz.append('circle').attr('r', 5).attr('fill', color).attr('opacity', 0.5);
-    }
-    sz.append('title').text(tooltip);
-
-    // Wider invisible hover hit area
+    // Hover hit area (clickable)
     const hit = g.append('rect').attr('class', 'cz')
       .attr('x', z.x - 16).attr('y', by - 6).attr('width', 32).attr('height', barH + 12)
       .attr('fill', 'transparent').attr('cursor', 'pointer')
       .on('mouseenter', () => sz.attr('opacity', 1))
       .on('mouseleave', () => sz.attr('opacity', 0))
-      .on('click', (ev) => { ev.stopPropagation(); action(); });
-    hit.append('title').text(tooltip);
+      .on('click', (ev) => { ev.stopPropagation(); z.snap(); });
+    hit.append('title').text(z.label);
   }
+}
+
+/**
+ * Create a draggable slider thumb. When observation is snapped (hard evidence),
+ * hovering the thumb shows an X; clicking without dragging clears.
+ */
+function addSliderThumb(
+  g: d3.Selection<SVGGElement, unknown, null, undefined>,
+  cx: number, cy: number, r: number,
+  fillVar: string, isObs: boolean, isSnapped: boolean,
+  onDrag: (x: number) => void, onEnd: (x: number) => void, onClear: () => void,
+  minX: number, maxX: number,
+) {
+  const thumbG = g.append('g').attr('class', 'slider-thumb');
+
+  const circle = thumbG.append('circle')
+    .attr('cx', cx).attr('cy', cy).attr('r', r)
+    .attr('fill', 'var(--thumb)').attr('stroke', fillVar).attr('stroke-width', 2)
+    .attr('cursor', 'ew-resize').attr('opacity', isObs ? 1 : 0.4);
+
+  // X overlay (hidden, shown on hover when snapped)
+  const xOverlay = thumbG.append('g')
+    .attr('transform', `translate(${cx},${cy})`)
+    .attr('opacity', 0).attr('pointer-events', 'none');
+  xOverlay.append('circle').attr('r', r + 2).attr('fill', 'var(--accent-hard)').attr('opacity', 0.3);
+  xOverlay.append('line').attr('x1', -3).attr('y1', -3).attr('x2', 3).attr('y2', 3)
+    .attr('stroke', 'var(--accent-hard)').attr('stroke-width', 2).attr('stroke-linecap', 'round');
+  xOverlay.append('line').attr('x1', 3).attr('y1', -3).attr('x2', -3).attr('y2', 3)
+    .attr('stroke', 'var(--accent-hard)').attr('stroke-width', 2).attr('stroke-linecap', 'round');
+
+  if (isSnapped) {
+    circle
+      .on('mouseenter', () => xOverlay.attr('opacity', 1))
+      .on('mouseleave', () => xOverlay.attr('opacity', 0));
+    circle.append('title').text('Click to clear observation');
+  }
+
+  let dragged = false;
+  circle.call(d3.drag<SVGCircleElement, unknown>()
+    .on('start', (e) => { e.sourceEvent?.stopPropagation(); dragged = false; })
+    .on('drag', function (e) {
+      dragged = true;
+      const nx = Math.max(minX, Math.min(maxX, e.x));
+      d3.select(this).attr('cx', nx);
+      xOverlay.attr('transform', `translate(${nx},${cy})`);
+      onDrag(nx);
+    })
+    .on('end', function (e) {
+      if (!dragged && isSnapped) { onClear(); return; }
+      if (dragged) { onEnd(Math.max(minX, Math.min(maxX, e.x))); }
+    })
+  );
 }
 
 function boolSlider(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Variable, dist: Distribution, h: number) {
@@ -497,28 +570,20 @@ function boolSlider(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: V
     setSlider(v, Math.max(0, Math.min(1, (local.x - bx) / bw)));
   });
 
-  // Thumb
-  const thumb = g.append('circle').attr('class', 'slider-thumb')
-    .attr('cx', bx + bw * tr).attr('cy', by + 5).attr('r', 7)
-    .attr('fill', 'var(--thumb)').attr('stroke', fillVar).attr('stroke-width', 2)
-    .attr('cursor', 'ew-resize').attr('opacity', isObs ? 1 : 0.4);
-  thumb.call(d3.drag<SVGCircleElement, unknown>()
-    .on('start', (e) => e.sourceEvent?.stopPropagation())
-    .on('drag', function (e) { d3.select(this).attr('cx', Math.max(bx, Math.min(bx + bw, e.x))); })
-    .on('end', function (e) { setSlider(v, (Math.max(bx, Math.min(bx + bw, e.x)) - bx) / bw); })
-  );
+  // Thumb (click-without-drag = clear when snapped)
+  const isSnapped = isObs && hardEvidence.has(v.name);
+  const clearObs = () => { hardEvidence.delete(v.name); softEvidence.delete(v.name); observationEnabled.delete(v.name); render(); };
+  addSliderThumb(g, bx + bw * tr, by + 5, 7, fillVar, isObs, isSnapped,
+    () => {}, (x) => setSlider(v, (x - bx) / bw), clearObs, bx, bx + bw);
 
-  // Snap zones at 0% (false) and 100% (true)
+  // Snap zones at endpoints (only shown when not already snapped there)
   const snappedFalse = isObs && hardEvidence.get(v.name) === v.outcomes[1];
   const snappedTrue = isObs && hardEvidence.get(v.name) === v.outcomes[0];
-  const clearObs = () => { hardEvidence.delete(v.name); softEvidence.delete(v.name); observationEnabled.delete(v.name); render(); };
   addSnapZones(g, bx, by, bw, 10, [
     { x: bx, label: `Click to observe as ${v.outcomes[1]}`, isSnapped: snappedFalse,
-      snap: () => { hardEvidence.set(v.name, v.outcomes[1]); softEvidence.delete(v.name); observationEnabled.add(v.name); render(); },
-      clear: clearObs },
+      snap: () => { hardEvidence.set(v.name, v.outcomes[1]); softEvidence.delete(v.name); observationEnabled.add(v.name); render(); } },
     { x: bx + bw, label: `Click to observe as ${v.outcomes[0]}`, isSnapped: snappedTrue,
-      snap: () => { hardEvidence.set(v.name, v.outcomes[0]); softEvidence.delete(v.name); observationEnabled.add(v.name); render(); },
-      clear: clearObs },
+      snap: () => { hardEvidence.set(v.name, v.outcomes[0]); softEvidence.delete(v.name); observationEnabled.add(v.name); render(); } },
   ]);
 }
 
@@ -569,50 +634,39 @@ function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Va
       render();
     });
 
-    // Slider thumb
-    const thumb = g.append('circle').attr('class', 'slider-thumb')
-      .attr('cx', bx + bw * thumbPos).attr('cy', by + 3).attr('r', 5)
-      .attr('fill', 'var(--thumb)').attr('stroke', 'var(--fill-bar)').attr('stroke-width', 1.5)
-      .attr('cursor', 'ew-resize').attr('opacity', isObs ? 1 : 0.3);
-
-    // Snap zones at 0% and 100% for this outcome
-    const isSnapped100 = isObs && hardEvidence.get(v.name) === o;
-    const isSnapped0 = isObs && softEvidence.has(v.name) && (softEvidence.get(v.name)!.get(o) ?? 1) < 0.01;
+    // Thumb (click-without-drag = clear when snapped)
+    const isSnapped = isObs && hardEvidence.get(v.name) === o;
     const clearMulti = () => { hardEvidence.delete(v.name); softEvidence.delete(v.name); observationEnabled.delete(v.name); render(); };
+    const idx = i;
+    const setMultiSlider = (x: number) => {
+      const ratio = (x - bx) / bw;
+      hardEvidence.delete(v.name); observationEnabled.add(v.name);
+      if (!softEvidence.has(v.name)) softEvidence.set(v.name, new Map(v.outcomes.map(x => [x, 1 / v.outcomes.length])));
+      const w = softEvidence.get(v.name)!;
+      const otherTotal = [...w].reduce((s, [k, val]) => k === v.outcomes[idx] ? s : s + val, 0);
+      w.set(v.outcomes[idx], ratio);
+      if (otherTotal > 0) {
+        const sc = Math.max(0, 1 - ratio) / otherTotal;
+        for (let j = 0; j < v.outcomes.length; j++) if (j !== idx) w.set(v.outcomes[j], (w.get(v.outcomes[j]) ?? 0) * sc);
+      }
+      if (ratio > 0.995) { hardEvidence.set(v.name, v.outcomes[idx]); softEvidence.delete(v.name); }
+      else if (ratio < 0.005) {
+        const allUniform = [...w.values()].every((x, _, a) => Math.abs(x - a[0]) < 0.02);
+        if (allUniform) { softEvidence.delete(v.name); observationEnabled.delete(v.name); }
+      }
+      render();
+    };
+    addSliderThumb(g, bx + bw * thumbPos, by + 3, 5, 'var(--fill-bar)', isObs, isSnapped,
+      () => {}, setMultiSlider, clearMulti, bx, bx + bw);
+
+    // Snap zones (only when not snapped)
+    const isSnapped0 = isObs && softEvidence.has(v.name) && (softEvidence.get(v.name)!.get(o) ?? 1) < 0.01;
     addSnapZones(g, bx, by, bw, 6, [
       { x: bx, label: `Click to exclude ${o}`, isSnapped: isSnapped0,
-        snap: () => { hardEvidence.delete(v.name); const w = new Map<string, number>(); v.outcomes.forEach((x, j) => w.set(x, j === i ? 0 : 1 / (v.outcomes.length - 1))); softEvidence.set(v.name, w); observationEnabled.add(v.name); render(); },
-        clear: clearMulti },
-      { x: bx + bw, label: `Click to observe as ${o}`, isSnapped: isSnapped100,
-        snap: () => { hardEvidence.set(v.name, o); softEvidence.delete(v.name); observationEnabled.add(v.name); render(); },
-        clear: clearMulti },
+        snap: () => { hardEvidence.delete(v.name); const w = new Map<string, number>(); v.outcomes.forEach((x, j) => w.set(x, j === i ? 0 : 1 / (v.outcomes.length - 1))); softEvidence.set(v.name, w); observationEnabled.add(v.name); render(); } },
+      { x: bx + bw, label: `Click to observe as ${o}`, isSnapped: isSnapped,
+        snap: () => { hardEvidence.set(v.name, o); softEvidence.delete(v.name); observationEnabled.add(v.name); render(); } },
     ]);
-
-    const idx = i;
-    thumb.call(d3.drag<SVGCircleElement, unknown>()
-      .on('start', (e) => e.sourceEvent?.stopPropagation())
-      .on('drag', function (e) { d3.select(this).attr('cx', Math.max(bx, Math.min(bx + bw, e.x))); })
-      .on('end', function (e) {
-        const ratio = (Math.max(bx, Math.min(bx + bw, e.x)) - bx) / bw;
-        // Set this outcome's weight, rebalance others proportionally
-        hardEvidence.delete(v.name); observationEnabled.add(v.name);
-        if (!softEvidence.has(v.name)) softEvidence.set(v.name, new Map(v.outcomes.map(x => [x, 1 / v.outcomes.length])));
-        const w = softEvidence.get(v.name)!;
-        const otherTotal = [...w].reduce((s, [k, val]) => k === v.outcomes[idx] ? s : s + val, 0);
-        w.set(v.outcomes[idx], ratio);
-        if (otherTotal > 0) {
-          const scale = Math.max(0, 1 - ratio) / otherTotal;
-          for (let j = 0; j < v.outcomes.length; j++) if (j !== idx) w.set(v.outcomes[j], (w.get(v.outcomes[j]) ?? 0) * scale);
-        }
-        // Snap to hard if one is ~1
-        if (ratio > 0.995) { hardEvidence.set(v.name, v.outcomes[idx]); softEvidence.delete(v.name); }
-        else if (ratio < 0.005) {
-          const allUniform = [...w.values()].every((x, _, a) => Math.abs(x - a[0]) < 0.02);
-          if (allUniform) { softEvidence.delete(v.name); observationEnabled.delete(v.name); }
-        }
-        render();
-      })
-    );
 
     y += NODE_H_PER_OUTCOME;
   }
