@@ -3,16 +3,12 @@ import { BayesianNetwork } from '../src/lib/network.js';
 import { buildDirectedGraph, buildJunctionTree, moralize, triangulate, findMaximalCliques } from '../src/lib/graph.js';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { JSDOM } from 'jsdom';
 
 const dogProblemXml = readFileSync(resolve(__dirname, '../src/example.xmlbif'), 'utf-8');
-const domParser = {
-  parseFromString: (s: string, t: string) => new JSDOM(s, { contentType: t }).window.document,
-};
 
 describe('Triangulation quality', () => {
   it('dog-problem produces 3 cliques (not 1 giant clique)', () => {
-    const net = BayesianNetwork.fromXmlBif(dogProblemXml, domParser);
+    const net = BayesianNetwork.fromXmlBif(dogProblemXml);
     const edges: Array<[any, any]> = [];
     for (const cpt of net.cpts) {
       for (const parent of cpt.parents) {
@@ -34,7 +30,7 @@ describe('Triangulation quality', () => {
   });
 
   it('junction tree has correct structure', () => {
-    const net = BayesianNetwork.fromXmlBif(dogProblemXml, domParser);
+    const net = BayesianNetwork.fromXmlBif(dogProblemXml);
     const edges: Array<[any, any]> = [];
     for (const cpt of net.cpts) {
       for (const parent of cpt.parents) {
@@ -60,7 +56,7 @@ describe('Triangulation quality', () => {
 
 describe('Soft/likelihood evidence', () => {
   it('soft evidence produces intermediate posteriors', () => {
-    const net = BayesianNetwork.fromXmlBif(dogProblemXml, domParser);
+    const net = BayesianNetwork.fromXmlBif(dogProblemXml);
 
     // Hard evidence: hear-bark=true
     const hardResult = net.infer(new Map([['hear-bark', 'true']]));
@@ -83,7 +79,7 @@ describe('Soft/likelihood evidence', () => {
   });
 
   it('hard evidence via likelihood matches regular hard evidence', () => {
-    const net = BayesianNetwork.fromXmlBif(dogProblemXml, domParser);
+    const net = BayesianNetwork.fromXmlBif(dogProblemXml);
 
     const hardResult = net.infer(new Map([['hear-bark', 'true']]));
     const likelihoodResult = net.infer(undefined, new Map([

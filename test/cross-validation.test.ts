@@ -7,15 +7,11 @@ import { describe, it, expect } from 'vitest';
 import { BayesianNetwork } from '../src/lib/network.js';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { JSDOM } from 'jsdom';
 
 const dogProblemXml = readFileSync(resolve(__dirname, '../src/example.xmlbif'), 'utf-8');
-const domParser = {
-  parseFromString: (s: string, t: string) => new JSDOM(s, { contentType: t }).window.document,
-};
 
 function loadNet() {
-  return BayesianNetwork.fromXmlBif(dogProblemXml, domParser);
+  return BayesianNetwork.fromXmlBif(dogProblemXml);
 }
 
 function getPosterior(net: BayesianNetwork, evidence?: Map<string, string>) {

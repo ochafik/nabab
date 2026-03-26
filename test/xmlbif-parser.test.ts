@@ -3,16 +3,12 @@ import { parseXmlBif } from '../src/lib/xmlbif-parser.js';
 import { BayesianNetwork } from '../src/lib/network.js';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { JSDOM } from 'jsdom';
 
 const dogProblemXml = readFileSync(resolve(__dirname, '../src/example.xmlbif'), 'utf-8');
-const domParser = {
-  parseFromString: (s: string, t: string) => new JSDOM(s, { contentType: t }).window.document,
-};
 
 describe('XMLBIF Parser', () => {
   it('parses the dog-problem network', () => {
-    const parsed = parseXmlBif(dogProblemXml, domParser);
+    const parsed = parseXmlBif(dogProblemXml);
     expect(parsed.name).toBe('Dog-Problem');
     expect(parsed.variables.length).toBe(5);
     expect(parsed.cpts.length).toBe(5);
@@ -26,7 +22,7 @@ describe('XMLBIF Parser', () => {
   });
 
   it('parses CPT tables correctly', () => {
-    const parsed = parseXmlBif(dogProblemXml, domParser);
+    const parsed = parseXmlBif(dogProblemXml);
     const familyOut = parsed.cpts.find(c => c.variable.name === 'family-out')!;
     expect(familyOut.parents.length).toBe(0);
     expect(familyOut.table.length).toBe(2);
@@ -41,7 +37,7 @@ describe('XMLBIF Parser', () => {
   });
 
   it('parses variable positions', () => {
-    const parsed = parseXmlBif(dogProblemXml, domParser);
+    const parsed = parseXmlBif(dogProblemXml);
     const lightOn = parsed.variables.find(v => v.name === 'light-on')!;
     expect(lightOn.position).toEqual({ x: 73, y: 165 });
   });
@@ -49,7 +45,7 @@ describe('XMLBIF Parser', () => {
 
 describe('Dog-Problem inference', () => {
   it('computes correct priors', () => {
-    const net = BayesianNetwork.fromXmlBif(dogProblemXml, domParser);
+    const net = BayesianNetwork.fromXmlBif(dogProblemXml);
     const result = net.infer();
 
     const fo = result.posteriors.get(net.getVariable('family-out')!)!;
@@ -66,7 +62,7 @@ describe('Dog-Problem inference', () => {
   });
 
   it('computes posteriors with evidence hear-bark=true', () => {
-    const net = BayesianNetwork.fromXmlBif(dogProblemXml, domParser);
+    const net = BayesianNetwork.fromXmlBif(dogProblemXml);
     const evidence = new Map([['hear-bark', 'true']]);
     const result = net.infer(evidence);
 
@@ -80,7 +76,7 @@ describe('Dog-Problem inference', () => {
   });
 
   it('computes posteriors with evidence dog-out=false', () => {
-    const net = BayesianNetwork.fromXmlBif(dogProblemXml, domParser);
+    const net = BayesianNetwork.fromXmlBif(dogProblemXml);
     const evidence = new Map([['dog-out', 'false']]);
     const result = net.infer(evidence);
 

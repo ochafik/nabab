@@ -14,14 +14,6 @@ const dogProblemXml = readFileSync(
 // Node.js DOM parser
 function makeParser() {
   // Use a minimal DOM parser for tests
-  const { JSDOM } = (() => {
-    try { return require('jsdom'); } catch { return { JSDOM: null }; }
-  })();
-  if (JSDOM) {
-    return { parseFromString: (s: string, t: string) => new JSDOM(s, { contentType: t }).window.document };
-  }
-  // Fallback: skip parser-dependent tests
-  return null;
 }
 
 describe('Inference', () => {

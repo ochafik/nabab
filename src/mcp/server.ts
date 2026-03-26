@@ -13,7 +13,6 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { BayesianNetwork } from '../lib/network.js';
 import type { Evidence } from '../lib/types.js';
-import { JSDOM } from 'jsdom';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -22,13 +21,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 let currentNetwork: BayesianNetwork | null = null;
 let currentEvidence: Evidence = new Map();
 
-function domParser() {
-  return {
-    parseFromString(s: string, t: string) {
-      return new JSDOM(s, { contentType: t }).window.document;
-    },
-  };
-}
 
 // ─── Bundled examples ────────────────────────────────────────────────
 
@@ -92,7 +84,7 @@ server.tool(
           xmlbif = readFileSync(localExample, 'utf-8');
         }
       }
-      currentNetwork = BayesianNetwork.fromXmlBif(xmlbif, domParser());
+      currentNetwork = BayesianNetwork.fromXmlBif(xmlbif;
       currentEvidence = new Map();
 
       return {
