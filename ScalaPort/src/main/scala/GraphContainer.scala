@@ -3,6 +3,10 @@ package nabab
 import scala.reflect.ClassTag
 
 case class ValuedEdgeDefinition[E](origin: Node, destination: Node, value: E) {
+  def sorted = 
+    if (origin < destination) this
+    else this.copy(origin = destination, destination = origin)
+
   def toEdgeDefinition(implicit factory: GraphFactory) =
     EdgeDefinition(
         origin = origin,
@@ -20,6 +24,15 @@ trait GraphContainer[N, E] {
   def addEdges(edgeValues: ValuedEdgeDefinition[E]*): (GraphContainer[N, E], Seq[Edge])
 
   def remove(nodes: Set[Node], edges: Set[Edge]): GraphContainer[N, E]
+  
+  def nodeToString(node: Node): String = getNode(node).toString
+  def edgeToString(edge: Edge): String = getEdge(edge).toString
+  
+  def makePrinter = GraphPrinter(graph, nodeToString, edgeToString)
+
+  def printGraph() {
+    makePrinter.printGraph()
+  }
 }
 
 object DefaultGraphContainer {
@@ -38,15 +51,23 @@ case class DefaultGraphContainer[N : ClassTag, E : ClassTag](
    (implicit val factory: GraphFactory)
         extends GraphContainer[N, E] {
 
-  lazy val hasUnitEdges =
-    implicitly[ClassTag[E]].runtimeClass == classOf[Unit]
+  // lazy val hasUnitEdges =
+  //   implicitly[ClassTag[E]].runtimeClass == classOf[Unit]
 
   override def getNode(node: Node) = nodeMappings(node)
   override def getEdge(edge: Edge) =
-    if (hasUnitEdges)
-      {}.asInstanceOf[E]
-    else
-      edgeMappings(edge)
+    // if (hasUnitEdges)
+    //   {}.asInstanceOf[E]
+    // else
+      edgeMappings.get(edge)
+        // .orElse({
+        //   if (graph.isOriented)
+        //     None
+        //   else
+        //     graph.inverse(edge).flatMap(edgeMappings.get)
+        // })
+        .getOrElse(
+          sys.error(s"No such edge mapping: $edge (mappings: $edgeMappings)"))
 
   override def addNodes(nodeValues: N*): (GraphContainer[N, E], Seq[Node]) = {
     val newNodesMapping = nodeValues.map(nodeValue => factory.makeNode -> nodeValue)
@@ -59,18 +80,10 @@ case class DefaultGraphContainer[N : ClassTag, E : ClassTag](
 
   override def addEdges(edgeValues: ValuedEdgeDefinition[E]*): (GraphContainer[N, E], Seq[Edge]) = {
     val (newEdgesMapping, newEdges) = {
-      if (hasUnitEdges) {
-        // Don't create edge mappings for Unit edge values.
-        (Seq[(Edge, E)](), edgeValues.map(e => {
-          assert(e.value == {})
-          e.toEdgeDefinition
-        })) 
-      } else {
-        edgeValues.map(ev => {
-          val e = ev.toEdgeDefinition
-          ((e.edge -> ev.value), e)
-        }).unzip
-      }
+      edgeValues.map(ev => {
+        val e = (if (graph.isOriented) ev else ev.sorted).toEdgeDefinition
+        ((e.edge -> ev.value), e)
+      }).unzip
     }
 
     val newContainer = this.copy(

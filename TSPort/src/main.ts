@@ -1,5 +1,6 @@
 import {Heap} from './collections/heap';
 import {DirectedGraph, Edge, buildJunctionTree} from './graph';
+import {computePotentials} from './inference/message_passing';
 import * as Immutable from 'immutable';
 import {parseXmlBif} from './xmlbif_parser';
 import {getUrl} from './request';
@@ -32,8 +33,18 @@ function isLessThan<T>(a: T, b: T) {
 function openNetworkFromString(src: string) {
   const net = parseXmlBif(src);
   console.log(net.toString());
-  const junctionTree = buildJunctionTree(net.graph, isLessThan).toString();
-  console.log(junctionTree);
+
+  const junctionTree = buildJunctionTree(net.graph, isLessThan);
+  const potentials = computePotentials(net.graph, junctionTree);
+  // var junctionTree;
+  // for (let i = 0; i < 100; i++) {
+  // const start = new Date().getTime();
+  // junctionTree = buildJunctionTree(net.graph, isLessThan).toString();
+  // const time = new Date().getTime() - start;
+  // console.log(`TOOK ${time} ms to compute`);
+  // }
+
+  // console.log(junctionTree);
   drawNetwork(net);
 }
 

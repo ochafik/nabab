@@ -24,7 +24,9 @@ object Run extends App {
   println("Cliques:")
   println(cliques)
   
-  val network = BayesianNetworkParser.loadFile(new File("../src/main/resources/com/ochafik/math/bayes/alarm.xml"))
+  val file = new File("../src/main/resources/com/ochafik/math/bayes/alarm.xml")
+  // val file = new File("../src/main/resources/com/ochafik/math/bayes/dogproblem.xml")
+  val network = BayesianNetworkParser.loadFile(file)
   println(network)
   println(s"""
     network.nodes = ${network.container.graph.nodes.size}

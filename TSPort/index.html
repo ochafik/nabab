@@ -1,12 +1,136 @@
-<html>
-  <head>
-    <script src="node_modules/immutable/dist/immutable.js"></script>
-    <!--<script src="node_modules/immutable/dist/immutable.min.js"></script>-->
-    <script src="node_modules/d3/build/d3.min.js"></script>
-  </head>
-  <body>
-    You can paste any xmlbif file on this page:
-    <div id="nabab"></div>
-    <script src="build/index.js"></script>
-  </body>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nabab — Bayesian Network Viewer</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --bg-surface: #f5f6f8;
+      --bg-node: #ffffff;
+      --bg-bar: #e8eaed;
+      --border: #dadce0;
+      --border-node: #c4c7cc;
+      --text: #1f2937;
+      --text-secondary: #6b7280;
+      --text-dim: #9ca3af;
+      --accent: #2563eb;
+      --accent-soft: #f59e0b;
+      --accent-hard: #dc2626;
+      --edge: #9ca3af;
+      --fill-bar: #2563eb;
+      --fill-bar-hard: #dc2626;
+      --fill-bar-soft: #f59e0b;
+      --thumb: #ffffff;
+      --thumb-stroke: #2563eb;
+      --node-shadow: rgba(0,0,0,0.08);
+      --header-bg: #f9fafb;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f1117;
+        --bg-surface: #1a1d27;
+        --bg-node: #1e2130;
+        --bg-bar: #2a2d3a;
+        --border: #333646;
+        --border-node: #3f4354;
+        --text: #e5e7eb;
+        --text-secondary: #9ca3af;
+        --text-dim: #6b7280;
+        --accent: #60a5fa;
+        --accent-soft: #fbbf24;
+        --accent-hard: #f87171;
+        --edge: #4b5563;
+        --fill-bar: #3b82f6;
+        --fill-bar-hard: #ef4444;
+        --fill-bar-soft: #f59e0b;
+        --thumb: #e5e7eb;
+        --thumb-stroke: #3b82f6;
+        --node-shadow: rgba(0,0,0,0.3);
+        --header-bg: #161822;
+      }
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      background: var(--header-bg);
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    header h1 { font-size: 16px; font-weight: 700; }
+    header .info { font-size: 12px; color: var(--text-secondary); }
+    .toolbar {
+      background: var(--header-bg);
+      padding: 6px 16px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .toolbar button, .toolbar select {
+      background: var(--bg-surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .toolbar button:hover { background: var(--border); }
+    .toolbar .hint { font-size: 11px; color: var(--text-dim); }
+    #graph-container {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+      background: var(--bg);
+    }
+    #graph-container svg { width: 100%; height: 100%; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Nabab</h1>
+    <span class="info" id="network-name">No network loaded</span>
+  </header>
+  <div class="toolbar">
+    <button id="btn-load-example">Load Example</button>
+    <select id="example-select">
+      <option value="dogproblem.xmlbif">Dog Problem</option>
+      <option value="alarm.xml">Alarm</option>
+      <option value="car-starts.xml">Car Starts</option>
+      <option value="car-starts-light.xml">Car Starts Light</option>
+      <option value="simple.xml">Simple</option>
+      <option value="simple2.xml">Simple 2</option>
+      <option value="example1.xml">Example 1</option>
+      <option value="example2.xml">Example 2</option>
+      <option value="example3.xml">Example 3</option>
+      <option value="example4.xml">Example 4</option>
+      <option value="example5.xml">Example 5</option>
+      <option value="example6.xml">Example 6</option>
+      <option value="example7.xml">Example 7</option>
+      <option value="example8.xml">Example 8</option>
+      <option value="example9.xml">Example 9</option>
+      <option value="example10.xml">Example 10</option>
+      <option value="Graph1.xml">Graph 1</option>
+    </select>
+    <button id="btn-layout">Auto Layout</button>
+    <button id="btn-clear-evidence">Clear Evidence</button>
+    <span class="hint">Click name to cycle | Drag slider for soft evidence | Eye toggles | Drop .xml files to load</span>
+  </div>
+  <div id="graph-container"></div>
+  <script type="module" src="/src/viewer/main.ts"></script>
+</body>
 </html>

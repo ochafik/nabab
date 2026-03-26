@@ -126,7 +126,7 @@ public class FastSparseValuedEdgeSet<V> implements ValuedEdgeSet<V> {
 		}
 		return element;
 	}
-	private final SortedIntList getList(final DynamicArray<SortedIntList> container, final int i, final boolean create) {
+	private final SortedIntList getIntList(final DynamicArray<SortedIntList> container, final int i, final boolean create) {
 		if (i >= container.getSize()) {
 			if (create) container.setSize(i + 1);
 			else return null;
@@ -152,7 +152,7 @@ public class FastSparseValuedEdgeSet<V> implements ValuedEdgeSet<V> {
 	}
 
 	public SortedIntArray getStarts(int end) {
-		SortedIntList list = getList(columns, end, false);
+		SortedIntList list = getIntList(columns, end, false);
 		if (list == null) return IntArrayUtils.EMPTY_ARRAY;
 		else return list; //IntArrayUtils.readOnlyWrap(list);
 	}
@@ -176,7 +176,7 @@ public class FastSparseValuedEdgeSet<V> implements ValuedEdgeSet<V> {
 		SortedIntObjectMap<V> list = getList(rows, start, false);
 		if (list != null) {
 			if (list.remove(end)) {
-				getList(columns, end, true).removeValue(start);
+				getIntList(columns, end, true).removeValue(start);
 				size--;
 			} else {
 				return;
@@ -186,7 +186,7 @@ public class FastSparseValuedEdgeSet<V> implements ValuedEdgeSet<V> {
 			list = getList(rows, end, false);
 			if (list != null) {
 				if (list.remove(start)) {
-					getList(columns, start, true).removeValue(end);
+					getIntList(columns, start, true).removeValue(end);
 				}
 			}
 			
@@ -210,7 +210,7 @@ public class FastSparseValuedEdgeSet<V> implements ValuedEdgeSet<V> {
 		int size = row.size();
 		row.put(end, value);
 		if (addToColumns && row.size() != size) {
-			SortedIntList column = getList(columns, end, true);
+			SortedIntList column = getIntList(columns, end, true);
 			column.add(start);
 			return true;
 		}

@@ -1,7 +1,7 @@
 import * as Immutable from 'immutable';
 
 export class MultiMap<K, V> {
-  constructor(public map = Immutable.Map<K, Immutable.Set<V>>()) {}
+  constructor(public readonly map = Immutable.Map<K, Immutable.Set<V>>()) {}
   
   *getAllValues(): IterableIterator<V> {
     const it = this.map.values();
@@ -37,5 +37,30 @@ export class MultiMap<K, V> {
   }
   mapValues(f: (value: V) => V): MultiMap<K, V> {
     return new MultiMap<K, V>(this.map.map(values => values!.map(f).toSet()).toMap());
+  }
+  static builder<K, V>(): MultiMapBuilder<K, V> {
+    return new MultiMapBuilder<K, V>();
+  }
+  static build<K, V>(f: (builder: MultiMapBuilder<K, V>) => void): MultiMap<K, V> {
+    const builder = MultiMap.builder<K, V>();
+    f(builder);
+    return builder.build(); 
+  }
+}
+
+export class MultiMapBuilder<K, V> {
+  constructor(public readonly map = Immutable.Map<K, Immutable.Set<V>>()) {}
+  
+  add(key: K, value: V): void {
+    let set = this.map.get(key);
+    if (set == null) this.map.set(key, set = Immutable.Set<V>().asMutable());
+    set.add(value);
+  }
+  remove(key: K, value: V): void {
+    let set = this.map.get(key);
+    if (set != null) set.remove(value);
+  }
+  build(): MultiMap<K, V> {
+    return new MultiMap<K, V>(this.map.map((v: Immutable.Set<V>) => v.toSet()).toMap());
   }
 }

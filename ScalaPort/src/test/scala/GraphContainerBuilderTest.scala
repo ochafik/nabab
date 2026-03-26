@@ -22,7 +22,7 @@ class GraphContainerBuilderTest {
     val builder = GraphContainerBuilder.oriented[String, Int]
     
     val Seq(a, b, c, d) = builder.mutate(_.addNodes("a", "b", "c", "d"))
-    println("graph after add: " + builder.graph)
+    println("Oriented graph after add: " + builder.graph)
     val Seq(
         a_b,
         b_c,
@@ -36,7 +36,9 @@ class GraphContainerBuilderTest {
     ))
 
     val graph = builder.container.graph
-    graph.printGraph()
+    assert(graph.nodes == Set(a, b, c, d))
+
+    builder.container.printGraph()
 //    println("graph: " + graph)
 //    println("nodes: " + graph.nodes)
 //    println("edges: " + graph.edges)
@@ -52,5 +54,45 @@ class GraphContainerBuilderTest {
     testOrientedEdge(b, c, b_c)
     testOrientedEdge(c, d, c_d)
     testOrientedEdge(b, d, b_d)
+  }
+  
+  @Test
+  def testBuildUnoriented {
+    implicit val factory = new DefaultGraphFactory
+    val builder = GraphContainerBuilder.unoriented[String, Int]
+    
+    val Seq(a, b, c, d) = builder.mutate(_.addNodes("a", "b", "c", "d"))
+    println("Unoriented graph after add: " + builder.graph)
+    val Seq(
+        a_b,
+        b_c,
+        c_d,
+        b_d
+    ) = builder.mutate(_.addEdges(
+        (a, b, 0),
+        (b, c, 10),
+        (c, d, 20),
+        (b, d, 30)
+    ))
+
+    val graph = builder.container.graph
+    assert(graph.nodes == Set(a, b, c, d))
+
+    builder.container.printGraph()
+//    println("graph: " + graph)
+//    println("nodes: " + graph.nodes)
+//    println("edges: " + graph.edges)
+
+    assert(graph.destinations(b) == Set(a, c, d))
+    assert(graph.edge(b, c) == Some(b_c))
+      
+    def testUnorientedEdge(x: Node, y: Node, e: Edge) {
+      assert(graph.edge(x, y) == Some(e))
+      assert(graph.edge(y, x).nonEmpty)
+    }
+    testUnorientedEdge(a, b, a_b)
+    testUnorientedEdge(b, c, b_c)
+    testUnorientedEdge(c, d, c_d)
+    testUnorientedEdge(b, d, b_d)
   }
 }

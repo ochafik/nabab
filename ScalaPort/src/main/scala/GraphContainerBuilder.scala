@@ -2,19 +2,20 @@ package nabab
 
 import scala.reflect.ClassTag
 
-case class GraphContainerBuilder[N : ClassTag, E : ClassTag](graph: Graph)(implicit factory: GraphFactory) {
-  private[this] var g: GraphContainer[N, E] =
-    DefaultGraphContainer[N, E](graph)
+case class GraphContainerBuilder[N : ClassTag, E : ClassTag](initialGraph: Graph)(implicit factory: GraphFactory) {
+  private[this] var _container: GraphContainer[N, E] =
+    DefaultGraphContainer[N, E](initialGraph)
   
   def mutate[R](f: GraphContainer[N, E] => (GraphContainer[N, E], R)): R = {
-    val (newG, r) = f(g)
-    g = newG
+    val (newContainer, r) = f(_container)
+    _container = newContainer
     r
   }
 
-  def container = g
+  def container = _container
+  def graph = _container.graph
   
-  override def toString = g.toString
+  override def toString = graph.toString
 }
 
 object GraphContainerBuilder {

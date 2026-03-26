@@ -30,7 +30,7 @@ object BayesianNetworkParser {
       BNode(
         bvar = bvarsByName(definition \ "FOR" text),
         dependencies = (definition \ "GIVEN" toList).map(_.text).map(bvarsByName),
-        table = (definition \ "TABLE" text).split(" ").map(_.toDouble))
+        table = (definition \ "TABLE" text).trim.split(" +").map(_.toDouble))
     }
     // TODO: use indices instead.
     val bnodesByBVar = bnodes.map(n => n.bvar -> n).toMap

@@ -3,3 +3,10 @@ target
 .classpath
 .project
 tmp
+.DS_Store
+node_modules
+dist
+build/classes
+TSPort/build
+TSPort/node_modules
+TSPort/dist

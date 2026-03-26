@@ -10,6 +10,8 @@ export default {
   plugins: [
     // nodeResolve({ jsnext: true, main: true }),
     typescript({
+      // target: "es5",
+      // lib: ["dom", "es2015.promise", "es5"],
       // Force usage of same version of typescript as the project:
       typescript: require('typescript')
     }),

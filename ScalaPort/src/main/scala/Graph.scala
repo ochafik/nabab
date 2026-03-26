@@ -9,20 +9,25 @@ case class Edge(id: Int) extends AnyVal with Ordered[Edge] {
 }
 
 case class EdgeDefinition(origin: Node, destination: Node, edge: Edge) {
-  def inverse = this.copy(origin = destination, destination = origin)
+  def sorted = 
+    if (origin < destination) this
+    else this.copy(origin = destination, destination = origin)
+
+  def inverse(implicit factory: GraphFactory) =
+    this.copy(origin = destination, destination = origin)//, edge = factory.makeEdge(destination, origin))
 }
+
 object EdgeDefinition {
   def apply(origin: Node, destination: Node)(implicit factory: GraphFactory) =
     new EdgeDefinition(origin, destination, factory.makeEdge(origin, destination))
-  
-//  def apply(origin: Node, destination: Node, edge: Edge) =
-//    new EdgeDefinition(origin, destination, edge)
 }
 
 trait GraphLike {
   implicit def factory: GraphFactory
   def nodes: Set[Node]
   def edges: Set[Edge]
+
+  def isOriented: Boolean
 
   def origin(edge: Edge): Node
   def destination(edge: Edge): Node
@@ -56,27 +61,13 @@ trait GraphUtils {
     EdgeDefinition(destination(edge), origin(edge), edge)
 }
 
-trait GraphDebugging {
-  self: Graph =>
-
-  def printGraph() {
-    printNodes()
-    printEdges()
-  }
-  def printNodes() {
-    for (node <- nodes) {
-      println(s"\t${incoming(node).map(origin)} -> $node -> ${outgoing(node).map(destination)}")
-    }
-  }
-  def printEdges() {
-    for (edge <- edges) {
-      println(s"\t$edge: ${origin(edge)} -> ${destination(edge)}")
-    }
-  }
-}
+//trait GraphDebugging {
+//  self: Graph =>
+//
+//}
 
 trait Graph
   extends GraphLike
   with GraphUtils
-  with GraphDebugging
+  
 trait UnorientedGraph extends Graph

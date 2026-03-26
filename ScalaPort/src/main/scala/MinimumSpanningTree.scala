@@ -10,21 +10,26 @@ object MinimumSpanningTree {
     val edges = graph.edges
     val nodes = graph.nodes.toSeq
     
-    implicit val edgeOrdering = Ordering.by[Edge, E](graphContainer.getEdge)  
+    implicit val edgeOrdering = Ordering.by[Edge, E](graphContainer.getEdge).reverse  
     val remainingEdges = new collection.mutable.PriorityQueue[Edge]()
-    remainingEdges ++= edges
+    if (graph.isOriented)
+      remainingEdges ++= edges
+    else
+      remainingEdges ++= edges.filter(edge => graph.origin(edge) < graph.destination(edge))
     
     val forests = nodes.map(Set(_)).toArray
     var forestCount = nodes.size
     var forestIndexesByNode = nodes.zipWithIndex.toMap
     
+    val printer = graphContainer.makePrinter
     val finalEdges = List[Edge]()
     while (forestCount > 1) {
       println("Forest count = " + forestCount)
       val edge = remainingEdges.dequeue()
       val origin = graph.origin(edge)
       val destination = graph.destination(edge)
-      println(s"Edge: $edge = $origin -> $destination")
+      println("Picked edge: " + printer.describeEdge(edge))
+      println("\tremaining edges: \n\t\t" + remainingEdges.map(printer.describeEdge).mkString("\n\t\t"))
       
       val originForestIndex = forestIndexesByNode(origin)
       val destinationForestIndex = forestIndexesByNode(destination)
@@ -42,6 +47,6 @@ object MinimumSpanningTree {
     
     graphContainer.remove(
         nodes = graph.factory.makeNodeSet,
-        edges = edges -- remainingEdges)
+        edges = remainingEdges.toSet)
   }
 }

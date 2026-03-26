@@ -1,35 +1,44 @@
 {
-  "name": "nabab-ts",
-  "description": "TypeScript port of Nabab, Olivier Chafik's toy Bayesian Network Engine",
-  "version": "0.0.1",
-  "main": "bundle.js",
-  "license": "MIT",
-  "scripts": {
-    "start": "concurrently --kill-others \"npm run rollup:w\" \"npm run lite\" ",
-    "lite": "lite-server",
-    "rollup": "rollup -c",
-    "rollup:w_buggy": "rollup -c -w",
-    "rollup:w": "watch \"npm run rollup\" src --wait=0 --interval=0.1",
-    "tsc": "tsc",
-    "tsc:w": "tsc -w",
-    "build": "npm run rollup && inline-assets index.html build/index.html"
+  "name": "nabab",
+  "version": "1.0.0",
+  "description": "Bayesian Network inference engine with interactive visualization",
+  "type": "module",
+  "main": "dist/lib/index.js",
+  "types": "dist/lib/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/lib/index.js",
+      "types": "./dist/lib/index.d.ts"
+    }
   },
+  "files": [
+    "dist/lib"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && tsc --project tsconfig.lib.json",
+    "build:viewer": "vite build",
+    "build:lib": "tsc --project tsconfig.lib.json",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "mcp": "tsx src/mcp/server.ts"
+  },
+  "license": "MIT",
+  "author": "Olivier Chafik",
   "devDependencies": {
-    "@types/d3": "^3.5.36",
-    "concurrently": "^3.1.0",
-    "d3": "^4.2.6",
-    "inline-assets": "^1.1.0",
-    "lite-server": "^2.2.2",
-    "rollup": "^0.36.1",
-    "rollup-plugin-node-resolve": "^2.0.0",
-    "rollup-plugin-typescript": "^0.8.1",
-    "rollup-plugin-uglify": "^1.0.1",
-    "rollup-watch": "^2.5.0",
-    "typescript": "^2.1.4",
-    "uglify-js": "git://github.com/mishoo/UglifyJS2#harmony",
-    "watch": "^1.0.1"
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@types/d3": "^7.4.3",
+    "d3": "^7.9.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0",
+    "vitest": "^3.0.0"
   },
   "dependencies": {
-    "immutable": "^3.8.1"
+    "@dagrejs/dagre": "^3.0.0",
+    "@types/jsdom": "^28.0.1",
+    "jsdom": "^27.0.1",
+    "zod": "^4.3.6"
   }
 }

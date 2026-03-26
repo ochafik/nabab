@@ -21,6 +21,8 @@ case class DefaultGraph(
    (implicit val factory: GraphFactory)
         extends Graph {
   
+  override def isOriented = true
+
   override def origin(edge: Edge) = origins(edge)
   override def destination(edge: Edge) = destinations(edge)
 
@@ -39,8 +41,6 @@ case class DefaultGraph(
       edges = edges ++ newEdges.map(_.edge),
       destinations = destinations ++ newEdges.map(e => e.edge -> e.destination),
       origins = origins ++ newEdges.map(e => e.edge -> e.origin),
-      // incomings = incomings,
-      // outgoings = outgoings)
       incomings = fillWithDefault(newNodes, incomings ++ newEdges.groupBy(_.destination).toSeq.map({
         case (destination, edges) =>
           destination -> (incomings(destination) ++ edges.map(_.edge))
