@@ -326,20 +326,20 @@ function setSlider(v: Variable, trueRatio: number) {
 function cycleOutcome(v: Variable, i: number) {
   const o = v.outcomes[i];
   if (!observationEnabled.has(v.name)) {
-    // Not observed → snap to 100% for this outcome
+    // Not observed → set this outcome to 100%, only it is tweaked
     hardEvidence.set(v.name, o); softEvidence.delete(v.name); observationEnabled.add(v.name);
-    tweakedOutcomes.set(v.name, new Set(v.outcomes));
+    tweakedOutcomes.set(v.name, new Set([o]));
     render(); return;
   }
-  // If this outcome is tweaked → un-tweak it (clear just this one)
+  // If this outcome is tweaked → un-tweak it
   const tweaked = tweakedOutcomes.get(v.name);
   if (tweaked?.has(o)) {
     clearOutcomeTweak(v, i);
     return;
   }
-  // If not tweaked → snap to 100% for this outcome
+  // Not tweaked → set to 100%, mark only this one tweaked
   hardEvidence.set(v.name, o); softEvidence.delete(v.name);
-  tweakedOutcomes.set(v.name, new Set(v.outcomes));
+  tweakedOutcomes.set(v.name, new Set([o]));
   render();
 }
 
@@ -673,30 +673,28 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
 
     // ── Row 1: eye icon + "label: XX%" ──
     const ry = -h / 2 + 14;
+    // Compute display weights (same source as sliders: evidence when observed, posterior when not)
+    const dw = isObs ? getWeights(v) : dist ? new Map(v.outcomes.map(o => [o, dist.get(o) ?? 0])) : null;
     let labelSuffix: string;
     if (isHard) {
       labelSuffix = ` = ${hardEvidence.get(v.name)}`;
-    } else if (dist && isSliderVar(v)) {
-      // 2-outcome: slider right = outcomes[0]
-      const p0 = dist.get(v.outcomes[0]) ?? 0;
+    } else if (dw && isSliderVar(v)) {
+      const p0 = dw.get(v.outcomes[0]) ?? 0;
       const pct0 = Math.round(p0 * 100);
       if (isBoolVar(v)) {
-        // Always show P(true-like outcome) regardless of outcome order
         const trueIdx = /^(true|yes|t|y)$/i.test(v.outcomes[0]) ? 0 : 1;
         const pctTrue = trueIdx === 0 ? pct0 : 100 - pct0;
         labelSuffix = (pctTrue === 100 || pctTrue === 0) && !isObs ? '' : `: ${pctTrue}%`;
       } else if (pct0 === 0) {
-        // 0% of outcomes[0] → just say outcomes[1]
         labelSuffix = `: ${v.outcomes[1]}`;
       } else if (pct0 === 100) {
         labelSuffix = `: ${v.outcomes[0]}`;
       } else {
         labelSuffix = `: ${pct0}% ${v.outcomes[0]}`;
       }
-    } else if (dist) {
-      // N-categorical: show highest-% category
+    } else if (dw) {
       let maxOut = v.outcomes[0], maxP = 0;
-      for (const o of v.outcomes) { const p = dist.get(o) ?? 0; if (p > maxP) { maxP = p; maxOut = o; } }
+      for (const o of v.outcomes) { const p = dw.get(o) ?? 0; if (p > maxP) { maxP = p; maxOut = o; } }
       const maxPct = Math.round(maxP * 100);
       labelSuffix = maxPct === 100 ? `: ${maxOut}` : `: ${maxPct}% ${maxOut}`;
     } else {
@@ -866,20 +864,14 @@ function addSliderThumb(
 }
 
 function boolSlider(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Variable, dist: Distribution, w: number, h: number, accent: string) {
-  const probTrue = dist.get(v.outcomes[0]) ?? 0;
   const showLabels = !isBoolVar(v);
   const bw = w - 34, bx = -bw / 2, by = -h / 2 + 33;
   const isObs = observationEnabled.has(v.name);
   const fillVar = isObs ? (hardEvidence.has(v.name) ? 'var(--accent-hard)' : 'var(--accent-soft)') : accent;
 
-  // Compute thumb position: evidence when observed, posterior otherwise
-  let tr: number;
-  if (isObs && hardEvidence.has(v.name)) tr = hardEvidence.get(v.name) === v.outcomes[0] ? 1 : 0;
-  else if (isObs && softEvidence.has(v.name)) {
-    const w = softEvidence.get(v.name)!;
-    const a = w.get(v.outcomes[0]) ?? .5, b = w.get(v.outcomes[1]) ?? .5;
-    tr = (a + b) > 0 ? a / (a + b) : .5;
-  } else tr = probTrue;
+  // Unified: bar = thumb = display value (evidence when observed, posterior when not)
+  const displayW = isObs ? getWeights(v) : new Map(v.outcomes.map(o => [o, dist.get(o) ?? 0]));
+  const tr = displayW.get(v.outcomes[0]) ?? 0; // right side = outcomes[0]
 
   // Bar background (also a click target to jump the slider)
   const barBg = g.append('rect').attr('x', bx).attr('y', by - 4).attr('width', bw).attr('height', 18)
@@ -934,7 +926,7 @@ function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Va
 
   // Layout columns
   const pctColW = 38;
-  const labelColW = Math.max(...v.outcomes.map(o => o.length)) * 6.5 + 8;
+  const labelColW = Math.max(...v.outcomes.map(o => o.length)) * 6.5 + 14;
   const barPad = 6;
   const thumbR = 5;
   const bw = w - 16 - labelColW - barPad - pctColW - thumbR;
