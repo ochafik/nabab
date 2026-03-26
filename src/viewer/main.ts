@@ -612,6 +612,9 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
     const isHard = isObs && hardEvidence.has(v.name);
     const isSoft = isObs && softEvidence.has(v.name);
 
+    // Detect degenerate posteriors (all zeros or NaN = inconsistent evidence)
+    const isDegenerate = dist ? [...dist.values()].every(p => p === 0 || isNaN(p)) : false;
+
     const ng = contentG.append('g').attr('transform', `translate(${pos.x},${pos.y})`);
 
     // Background
@@ -619,8 +622,10 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
     const varIdx = net.variables.indexOf(v);
     const hue = (varIdx / net.variables.length) * 360;
     const isDark = matchMedia('(prefers-color-scheme: dark)').matches;
-    const bgFill = isObs ? `hsl(${hue}, ${isHard ? 20 : 25}%, ${isDark ? 20 : 92}%)` : 'var(--bg-node)';
-    const borderCol = isHard ? 'var(--accent-hard)' : isSoft ? 'var(--accent-soft)' : 'var(--border-node)';
+    const bgFill = isDegenerate ? (isDark ? '#2a1a1a' : '#fef2f2')
+      : isObs ? `hsl(${hue}, ${isHard ? 20 : 25}%, ${isDark ? 20 : 92}%)` : 'var(--bg-node)';
+    const borderCol = isDegenerate ? 'var(--accent-hard)'
+      : isHard ? 'var(--accent-hard)' : isSoft ? 'var(--accent-soft)' : 'var(--border-node)';
     // Accent for sliders: colored when observed, neutral when not
     const nodeAccent = isObs
       ? (isHard ? 'var(--accent-hard)' : isSoft ? 'var(--accent-soft)' : `hsl(${hue}, 55%, ${isDark ? 55 : 45}%)`)
@@ -636,10 +641,13 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
         .attr('stroke-dasharray', '4,2').attr('opacity', 0.8);
     }
 
-    ng.append('rect').attr('x', -w / 2).attr('y', -h / 2)
+    const bgRect = ng.append('rect').attr('x', -w / 2).attr('y', -h / 2)
       .attr('width', w).attr('height', h).attr('rx', 8)
       .attr('fill', bgFill).attr('stroke', borderCol).attr('stroke-width', 1.5)
       .attr('filter', 'url(#node-shadow)');
+    if (isDegenerate) {
+      bgRect.attr('stroke-dasharray', '4,3').attr('opacity', 0.7);
+    }
 
     // Node drag (moves all selected if this node is selected)
     ng.call(d3.drag<SVGGElement, unknown>()
@@ -683,7 +691,9 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
     // Compute display weights (same source as sliders: evidence when observed, posterior when not)
     const dw = isObs ? getWeights(v) : dist ? new Map(v.outcomes.map(o => [o, dist.get(o) ?? 0])) : null;
     let labelSuffix: string;
-    if (isHard) {
+    if (isDegenerate && !isObs) {
+      labelSuffix = ': inconsistent';
+    } else if (isHard) {
       labelSuffix = ` = ${hardEvidence.get(v.name)}`;
     } else if (dw && isSliderVar(v)) {
       const p0 = dw.get(v.outcomes[0]) ?? 0;
