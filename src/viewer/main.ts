@@ -205,6 +205,10 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
   const W = container.clientWidth, H = container.clientHeight;
   const svg = d3.select(container).append('svg').attr('width', W).attr('height', H);
   const defs = svg.append('defs');
+  // Drop shadow for nodes
+  const shadow = defs.append('filter').attr('id', 'node-shadow').attr('x', '-10%').attr('y', '-10%').attr('width', '130%').attr('height', '140%');
+  shadow.append('feDropShadow').attr('dx', 0).attr('dy', 2).attr('stdDeviation', 4).attr('flood-opacity', 0.15);
+
   defs.append('marker').attr('id', 'arr')
     .attr('viewBox', '0 -4 8 8').attr('refX', 4).attr('refY', 0)
     .attr('markerWidth', 5).attr('markerHeight', 5).attr('orient', 'auto')
@@ -233,7 +237,7 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
     ng.append('rect').attr('x', -NODE_W / 2).attr('y', -h / 2)
       .attr('width', NODE_W).attr('height', h).attr('rx', 8)
       .attr('fill', 'var(--bg-node)').attr('stroke', borderCol).attr('stroke-width', 1.5)
-      .style('filter', `drop-shadow(0 1px 3px var(--node-shadow))`);
+      .attr('filter', 'url(#node-shadow)');
 
     // Node drag
     ng.call(d3.drag<SVGGElement, unknown>()
@@ -386,10 +390,21 @@ function boolSlider(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: V
     tr = (a + b) > 0 ? a / (a + b) : .5;
   } else tr = probTrue;
 
-  // Bar fill matches thumb position (not posterior) so they never diverge
-  g.append('rect').attr('x', bx).attr('y', by).attr('width', bw).attr('height', 10).attr('rx', 5).attr('fill', 'var(--bg-bar)');
+  // Bar background (also a click target to jump the slider)
+  const barBg = g.append('rect').attr('x', bx).attr('y', by - 4).attr('width', bw).attr('height', 18)
+    .attr('rx', 5).attr('fill', 'transparent').attr('cursor', 'pointer').attr('class', 'cz');
+  g.append('rect').attr('x', bx).attr('y', by).attr('width', bw).attr('height', 10)
+    .attr('rx', 5).attr('fill', 'var(--bg-bar)').attr('pointer-events', 'none');
   if (tr > 0.005)
-    g.append('rect').attr('x', bx).attr('y', by).attr('width', Math.max(4, bw * tr)).attr('height', 10).attr('rx', 5).attr('fill', fillVar).attr('opacity', 0.6);
+    g.append('rect').attr('x', bx).attr('y', by).attr('width', Math.max(4, bw * tr)).attr('height', 10)
+      .attr('rx', 5).attr('fill', fillVar).attr('opacity', 0.6).attr('pointer-events', 'none');
+  barBg.on('click', (ev) => {
+    ev.stopPropagation();
+    const pt = (ev.target as SVGElement).ownerSVGElement!.createSVGPoint();
+    pt.x = ev.clientX; pt.y = ev.clientY;
+    const local = pt.matrixTransform((ev.target as SVGGraphicsElement).getScreenCTM()!.inverse());
+    setSlider(v, Math.max(0, Math.min(1, (local.x - bx) / bw)));
+  });
 
   // Thumb
   const thumb = g.append('circle').attr('class', 'slider-thumb')
@@ -437,11 +452,31 @@ function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Va
     const evidenceW = isObs && softEvidence.has(v.name) ? (softEvidence.get(v.name)!.get(o) ?? prob) : prob;
     const thumbPos = isObs && hardEvidence.has(v.name) ? (hardEvidence.get(v.name) === o ? 1 : 0) : evidenceW;
 
-    // Slider bar (fill matches thumb)
+    // Slider bar (click-to-jump + fill matches thumb)
     const by = y + 8;
-    g.append('rect').attr('x', bx).attr('y', by).attr('width', bw).attr('height', 6).attr('rx', 3).attr('fill', 'var(--bg-bar)');
+    const barHit = g.append('rect').attr('x', bx).attr('y', by - 4).attr('width', bw).attr('height', 14)
+      .attr('fill', 'transparent').attr('cursor', 'pointer').attr('class', 'cz');
+    g.append('rect').attr('x', bx).attr('y', by).attr('width', bw).attr('height', 6)
+      .attr('rx', 3).attr('fill', 'var(--bg-bar)').attr('pointer-events', 'none');
     if (thumbPos > 0.005)
-      g.append('rect').attr('x', bx).attr('y', by).attr('width', Math.max(3, bw * thumbPos)).attr('height', 6).attr('rx', 3).attr('fill', 'var(--fill-bar)').attr('opacity', 0.6);
+      g.append('rect').attr('x', bx).attr('y', by).attr('width', Math.max(3, bw * thumbPos)).attr('height', 6)
+        .attr('rx', 3).attr('fill', 'var(--fill-bar)').attr('opacity', 0.6).attr('pointer-events', 'none');
+    const outcomeIdx = i;
+    barHit.on('click', (ev) => {
+      ev.stopPropagation();
+      const pt = (ev.target as SVGElement).ownerSVGElement!.createSVGPoint();
+      pt.x = ev.clientX; pt.y = ev.clientY;
+      const local = pt.matrixTransform((ev.target as SVGGraphicsElement).getScreenCTM()!.inverse());
+      const ratio = Math.max(0, Math.min(1, (local.x - bx) / bw));
+      hardEvidence.delete(v.name); observationEnabled.add(v.name);
+      if (!softEvidence.has(v.name)) softEvidence.set(v.name, new Map(v.outcomes.map(x => [x, 1 / v.outcomes.length])));
+      const w = softEvidence.get(v.name)!;
+      const otherTotal = [...w].reduce((s, [k, val]) => k === v.outcomes[outcomeIdx] ? s : s + val, 0);
+      w.set(v.outcomes[outcomeIdx], ratio);
+      if (otherTotal > 0) { const sc = Math.max(0, 1 - ratio) / otherTotal; for (let j = 0; j < v.outcomes.length; j++) if (j !== outcomeIdx) w.set(v.outcomes[j], (w.get(v.outcomes[j]) ?? 0) * sc); }
+      if (ratio > 0.995) { hardEvidence.set(v.name, v.outcomes[outcomeIdx]); softEvidence.delete(v.name); }
+      render();
+    });
 
     // Slider thumb
     const thumb = g.append('circle').attr('class', 'slider-thumb')
