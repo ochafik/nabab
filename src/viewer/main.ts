@@ -327,31 +327,47 @@ function drawEdges(net: BayesianNetwork) {
   }
 }
 
-/** Reusable snap-zone targets at the ends of a slider bar. */
+/**
+ * Snap-zone targets at slider endpoints.
+ * If already snapped to this end, shows a cross (clear) button instead.
+ */
 function addSnapZones(
   g: d3.Selection<SVGGElement, unknown, null, undefined>,
   bx: number, by: number, bw: number, barH: number,
-  labels: Array<{ x: number; text: string; action: () => void }>,
+  zones: Array<{ x: number; label: string; isSnapped: boolean; snap: () => void; clear: () => void }>,
 ) {
-  for (const { x, text, action } of labels) {
+  for (const z of zones) {
+    const action = z.isSnapped ? z.clear : z.snap;
+    const tooltip = z.isSnapped ? 'Click to clear observation' : z.label;
+    const color = z.isSnapped ? 'var(--accent-hard)' : 'var(--accent)';
+
     const sz = g.append('g').attr('class', 'cz')
-      .attr('transform', `translate(${x},${by + barH / 2})`)
+      .attr('transform', `translate(${z.x},${by + barH / 2})`)
       .attr('cursor', 'pointer').attr('opacity', 0)
       .on('click', (ev) => { ev.stopPropagation(); action(); });
-    sz.append('circle').attr('r', 9)
-      .attr('fill', 'var(--accent)').attr('opacity', 0.25);
-    sz.append('circle').attr('r', 5)
-      .attr('fill', 'var(--accent)').attr('opacity', 0.5);
-    sz.append('title').text(text);
 
-    // Show on hover near the zone (use a wider invisible hit area)
+    if (z.isSnapped) {
+      // Cross (x) icon
+      sz.append('circle').attr('r', 8).attr('fill', color).attr('opacity', 0.2);
+      sz.append('line').attr('x1', -3).attr('y1', -3).attr('x2', 3).attr('y2', 3)
+        .attr('stroke', color).attr('stroke-width', 2).attr('stroke-linecap', 'round');
+      sz.append('line').attr('x1', 3).attr('y1', -3).attr('x2', -3).attr('y2', 3)
+        .attr('stroke', color).attr('stroke-width', 2).attr('stroke-linecap', 'round');
+    } else {
+      // Snap target circle
+      sz.append('circle').attr('r', 9).attr('fill', color).attr('opacity', 0.25);
+      sz.append('circle').attr('r', 5).attr('fill', color).attr('opacity', 0.5);
+    }
+    sz.append('title').text(tooltip);
+
+    // Wider invisible hover hit area
     const hit = g.append('rect').attr('class', 'cz')
-      .attr('x', x - 16).attr('y', by - 6).attr('width', 32).attr('height', barH + 12)
+      .attr('x', z.x - 16).attr('y', by - 6).attr('width', 32).attr('height', barH + 12)
       .attr('fill', 'transparent').attr('cursor', 'pointer')
       .on('mouseenter', () => sz.attr('opacity', 1))
       .on('mouseleave', () => sz.attr('opacity', 0))
       .on('click', (ev) => { ev.stopPropagation(); action(); });
-    hit.append('title').text(text);
+    hit.append('title').text(tooltip);
   }
 }
 
@@ -387,9 +403,16 @@ function boolSlider(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: V
   );
 
   // Snap zones at 0% (false) and 100% (true)
+  const snappedFalse = isObs && hardEvidence.get(v.name) === v.outcomes[1];
+  const snappedTrue = isObs && hardEvidence.get(v.name) === v.outcomes[0];
+  const clearObs = () => { hardEvidence.delete(v.name); softEvidence.delete(v.name); observationEnabled.delete(v.name); render(); };
   addSnapZones(g, bx, by, bw, 10, [
-    { x: bx, text: `Click to observe as ${v.outcomes[1]}`, action: () => { hardEvidence.set(v.name, v.outcomes[1]); softEvidence.delete(v.name); observationEnabled.add(v.name); render(); } },
-    { x: bx + bw, text: `Click to observe as ${v.outcomes[0]}`, action: () => { hardEvidence.set(v.name, v.outcomes[0]); softEvidence.delete(v.name); observationEnabled.add(v.name); render(); } },
+    { x: bx, label: `Click to observe as ${v.outcomes[1]}`, isSnapped: snappedFalse,
+      snap: () => { hardEvidence.set(v.name, v.outcomes[1]); softEvidence.delete(v.name); observationEnabled.add(v.name); render(); },
+      clear: clearObs },
+    { x: bx + bw, label: `Click to observe as ${v.outcomes[0]}`, isSnapped: snappedTrue,
+      snap: () => { hardEvidence.set(v.name, v.outcomes[0]); softEvidence.delete(v.name); observationEnabled.add(v.name); render(); },
+      clear: clearObs },
   ]);
 }
 
@@ -427,9 +450,16 @@ function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Va
       .attr('cursor', 'ew-resize').attr('opacity', isObs ? 1 : 0.3);
 
     // Snap zones at 0% and 100% for this outcome
+    const isSnapped100 = isObs && hardEvidence.get(v.name) === o;
+    const isSnapped0 = isObs && softEvidence.has(v.name) && (softEvidence.get(v.name)!.get(o) ?? 1) < 0.01;
+    const clearMulti = () => { hardEvidence.delete(v.name); softEvidence.delete(v.name); observationEnabled.delete(v.name); render(); };
     addSnapZones(g, bx, by, bw, 6, [
-      { x: bx, text: `Click to exclude ${o}`, action: () => { cycleOutcome(v, i); /* sets to 0% if currently at 100% */ hardEvidence.delete(v.name); const w = new Map<string, number>(); v.outcomes.forEach((x, j) => w.set(x, j === i ? 0 : 1 / (v.outcomes.length - 1))); softEvidence.set(v.name, w); observationEnabled.add(v.name); render(); } },
-      { x: bx + bw, text: `Click to observe as ${o}`, action: () => { hardEvidence.set(v.name, o); softEvidence.delete(v.name); observationEnabled.add(v.name); render(); } },
+      { x: bx, label: `Click to exclude ${o}`, isSnapped: isSnapped0,
+        snap: () => { hardEvidence.delete(v.name); const w = new Map<string, number>(); v.outcomes.forEach((x, j) => w.set(x, j === i ? 0 : 1 / (v.outcomes.length - 1))); softEvidence.set(v.name, w); observationEnabled.add(v.name); render(); },
+        clear: clearMulti },
+      { x: bx + bw, label: `Click to observe as ${o}`, isSnapped: isSnapped100,
+        snap: () => { hardEvidence.set(v.name, o); softEvidence.delete(v.name); observationEnabled.add(v.name); render(); },
+        clear: clearMulti },
     ]);
 
     const idx = i;
