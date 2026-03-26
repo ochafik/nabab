@@ -589,7 +589,10 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
       const p0 = dist.get(v.outcomes[0]) ?? 0;
       const pct0 = Math.round(p0 * 100);
       if (isBoolVar(v)) {
-        labelSuffix = (pct0 === 100 || pct0 === 0) && !isObs ? '' : `: ${pct0}%`;
+        // Always show P(true-like outcome) regardless of outcome order
+        const trueIdx = /^(true|yes|t|y)$/i.test(v.outcomes[0]) ? 0 : 1;
+        const pctTrue = trueIdx === 0 ? pct0 : 100 - pct0;
+        labelSuffix = (pctTrue === 100 || pctTrue === 0) && !isObs ? '' : `: ${pctTrue}%`;
       } else if (pct0 === 0) {
         // 0% of outcomes[0] → just say outcomes[1]
         labelSuffix = `: ${v.outcomes[1]}`;
