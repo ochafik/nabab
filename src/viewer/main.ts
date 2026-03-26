@@ -356,44 +356,74 @@ function render() {
 const ICON_VIS = 'M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z';
 const ICON_VIS_OFF = 'M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z';
 
-const NODE_W_MIN = 150;
+const NODE_W_MIN = 140;
+const NODE_PAD = 48; // eye icon (28) + margins (20)
 const NODE_H_BOOL = 56;
-const NODE_H_BOOL_LABELS = 68; // extra room when showing non-standard labels
+const NODE_H_BOOL_LABELS = 68;
 const NODE_H_MULTI_BASE = 30;
 const NODE_H_PER_OUTCOME = 24;
-const CHAR_W = 6.5; // approx px per character at 10px font
 
 const BOOL_PATTERNS = /^(true|false|yes|no|t|f|y|n)$/i;
 
-/** Is this a boolean variable with standard true/false-like outcomes? */
 function isBoolVar(v: Variable): boolean {
   return v.outcomes.length === 2 && BOOL_PATTERNS.test(v.outcomes[0]) && BOOL_PATTERNS.test(v.outcomes[1]);
 }
 
-/** Is this variable displayed as a single slider (2 outcomes)? */
 function isSliderVar(v: Variable): boolean {
   return v.outcomes.length === 2;
 }
 
-/** Compute node width based on content. */
-function nodeW(v: Variable): number {
-  // Account for eye icon (28px) + padding (16px) + name + suffix
-  const nameLen = v.name.length + 6; // ": XX%" or "= outcome"
-  const headerW = 44 + nameLen * CHAR_W;
+// Measured text widths — populated at start of each render
+let _measuredWidths = new Map<string, number>();
 
-  if (isSliderVar(v)) {
-    // Boolean-like: need room for labels if non-standard
-    if (!isBoolVar(v)) {
-      const labelW = 44 + Math.max(v.outcomes[0].length, v.outcomes[1].length) * CHAR_W * 2 + 40;
-      return Math.max(NODE_W_MIN, headerW, labelW);
+/** Measure actual SVG text widths for all variables. */
+function measureTextWidths(
+  svg: d3.Selection<SVGSVGElement, unknown, null, undefined>,
+  net: BayesianNetwork,
+  posteriors: Map<Variable, Distribution>,
+) {
+  _measuredWidths = new Map();
+  const measureG = svg.append('g').attr('opacity', 0);
+
+  for (const v of net.variables) {
+    const dist = posteriors.get(v);
+    // Measure header text
+    let headerText = v.name;
+    if (dist && isSliderVar(v)) {
+      headerText += `: ${Math.round((dist.get(v.outcomes[0]) ?? 0) * 100)}%`;
+    } else if (dist) {
+      let maxOut = v.outcomes[0], maxP = 0;
+      for (const o of v.outcomes) { const p = dist.get(o) ?? 0; if (p > maxP) { maxP = p; maxOut = o; } }
+      headerText += `: ${maxOut} ${Math.round(maxP * 100)}%`;
     }
-    return Math.max(NODE_W_MIN, headerW);
+    const headerEl = measureG.append('text')
+      .attr('font-size', '12px').attr('font-weight', '600').text(headerText);
+    const headerW = (headerEl.node() as SVGTextElement).getBBox().width;
+
+    // Measure outcome labels
+    let labelsW = 0;
+    if (isSliderVar(v) && !isBoolVar(v)) {
+      for (const o of v.outcomes) {
+        const el = measureG.append('text').attr('font-size', '9px').text(o);
+        labelsW = Math.max(labelsW, (el.node() as SVGTextElement).getBBox().width);
+      }
+      labelsW = labelsW * 2 + 60; // both labels + slider gap
+    } else if (!isSliderVar(v)) {
+      for (const o of v.outcomes) {
+        const el = measureG.append('text').attr('font-size', '10px').text(o);
+        labelsW = Math.max(labelsW, (el.node() as SVGTextElement).getBBox().width);
+      }
+      labelsW += 100; // slider + percentage column
+    }
+
+    _measuredWidths.set(v.name, Math.max(NODE_W_MIN, headerW + NODE_PAD, labelsW + 16));
   }
 
-  // Multi-class: label (right-aligned) + slider + "100%"
-  const maxLabel = Math.max(...v.outcomes.map(o => o.length));
-  const tableW = maxLabel * CHAR_W + 80 + 40; // label + slider + pct
-  return Math.max(NODE_W_MIN, headerW, tableW);
+  measureG.remove();
+}
+
+function nodeW(v: Variable): number {
+  return _measuredWidths.get(v.name) ?? NODE_W_MIN;
 }
 
 function nodeH(v: Variable): number {
@@ -441,6 +471,9 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
     .style('user-select', 'none');
   const svg = _svg;
   const defs = svg.append('defs');
+  // Measure text widths to size nodes correctly
+  measureTextWidths(svg, net, posteriors);
+
   // Drop shadow for nodes
   const shadow = defs.append('filter').attr('id', 'node-shadow').attr('x', '-10%').attr('y', '-10%').attr('width', '130%').attr('height', '140%');
   shadow.append('feDropShadow').attr('dx', 0).attr('dy', 2).attr('stdDeviation', 4).attr('flood-opacity', 0.15);
