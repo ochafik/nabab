@@ -318,6 +318,7 @@ function nodeH(v: Variable) {
 let _edgeGroup: d3.Selection<SVGGElement, unknown, null, undefined> | null = null;
 let _zoomBehavior: d3.ZoomBehavior<SVGSVGElement, unknown> | null = null;
 let _svg: d3.Selection<SVGSVGElement, unknown, null, undefined> | null = null;
+let _savedTransform: d3.ZoomTransform = d3.zoomIdentity;
 
 function fitView() {
   if (!network || !_zoomBehavior || !_svg) return;
@@ -345,6 +346,8 @@ function fitView() {
 
 function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distribution>) {
   const container = document.getElementById('graph-container')!;
+  // Preserve zoom transform across re-renders
+  if (_svg) _savedTransform = d3.zoomTransform(_svg.node()!);
   container.innerHTML = '';
   const W = container.clientWidth, H = container.clientHeight;
   _svg = d3.select(container).append('svg').attr('width', W).attr('height', H)
@@ -371,6 +374,10 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
     .scaleExtent([0.1, 4])
     .on('zoom', (ev) => contentG.attr('transform', ev.transform));
   svg.call(_zoomBehavior);
+  // Restore previous zoom transform
+  if (_savedTransform !== d3.zoomIdentity) {
+    svg.call(_zoomBehavior.transform, _savedTransform);
+  }
 
   _edgeGroup = contentG.append('g');
   drawEdges(net);
@@ -386,10 +393,19 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
     const ng = contentG.append('g').attr('transform', `translate(${pos.x},${pos.y})`);
 
     // Background
-    const borderCol = isHard ? 'var(--accent-hard)' : isSoft ? 'var(--accent-soft)' : 'var(--border-node)';
+    // Pastel color per variable (HSL, evenly spaced hue)
+    const varIdx = net.variables.indexOf(v);
+    const hue = (varIdx / net.variables.length) * 360;
+    const isDark = matchMedia('(prefers-color-scheme: dark)').matches;
+    const bgFill = isHard ? `hsl(${hue}, 20%, ${isDark ? 18 : 92}%)`
+      : isSoft ? `hsl(${hue}, 25%, ${isDark ? 20 : 90}%)`
+      : `hsl(${hue}, 30%, ${isDark ? 22 : 94}%)`;
+    const borderCol = isHard ? 'var(--accent-hard)' : isSoft ? 'var(--accent-soft)'
+      : `hsl(${hue}, 35%, ${isDark ? 45 : 65}%)`;
+
     ng.append('rect').attr('x', -NODE_W / 2).attr('y', -h / 2)
       .attr('width', NODE_W).attr('height', h).attr('rx', 8)
-      .attr('fill', 'var(--bg-node)').attr('stroke', borderCol).attr('stroke-width', 1.5)
+      .attr('fill', bgFill).attr('stroke', borderCol).attr('stroke-width', 1.5)
       .attr('filter', 'url(#node-shadow)');
 
     // Node drag
