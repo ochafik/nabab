@@ -551,11 +551,9 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
     if (isHard) {
       labelSuffix = ` = ${hardEvidence.get(v.name)}`;
     } else if (dist && isSliderVar(v)) {
-      // 2-outcome: show "X% MostLikely"
-      const p0 = dist.get(v.outcomes[0]) ?? 0;
-      const best = p0 >= 0.5 ? v.outcomes[0] : v.outcomes[1];
-      const bestP = p0 >= 0.5 ? p0 : 1 - p0;
-      labelSuffix = isBoolVar(v) ? `: ${Math.round(bestP * 100)}%` : `: ${Math.round(bestP * 100)}% ${best}`;
+      // 2-outcome: show P(outcomes[0]) to match slider (right = outcomes[0])
+      const p0 = Math.round((dist.get(v.outcomes[0]) ?? 0) * 100);
+      labelSuffix = `: ${p0}%`;
     } else if (dist) {
       // Categorical: show most likely outcome
       let maxOut = v.outcomes[0], maxP = 0;
