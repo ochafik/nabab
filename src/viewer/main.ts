@@ -736,15 +736,15 @@ function addSliderThumb(
     .attr('fill', 'var(--thumb)').attr('stroke', fillVar).attr('stroke-width', 2)
     .attr('cursor', 'ew-resize').attr('opacity', isObs ? 1 : 0.4);
 
-  // X overlay (shown on hover when any observation is active)
+  // Subtle X inside thumb (shown on hover when observed)
+  const s = Math.max(2, r * 0.4); // X arm size, proportional to thumb
   const xOverlay = thumbG.append('g')
     .attr('transform', `translate(${cx},${cy})`)
     .attr('opacity', 0).attr('pointer-events', 'none');
-  xOverlay.append('circle').attr('r', r + 2).attr('fill', 'var(--accent-hard)').attr('opacity', 0.3);
-  xOverlay.append('line').attr('x1', -3).attr('y1', -3).attr('x2', 3).attr('y2', 3)
-    .attr('stroke', 'var(--accent-hard)').attr('stroke-width', 2).attr('stroke-linecap', 'round');
-  xOverlay.append('line').attr('x1', 3).attr('y1', -3).attr('x2', -3).attr('y2', 3)
-    .attr('stroke', 'var(--accent-hard)').attr('stroke-width', 2).attr('stroke-linecap', 'round');
+  xOverlay.append('line').attr('x1', -s).attr('y1', -s).attr('x2', s).attr('y2', s)
+    .attr('stroke', 'var(--accent-hard)').attr('stroke-width', 1.5).attr('stroke-linecap', 'round');
+  xOverlay.append('line').attr('x1', s).attr('y1', -s).attr('x2', -s).attr('y2', s)
+    .attr('stroke', 'var(--accent-hard)').attr('stroke-width', 1.5).attr('stroke-linecap', 'round');
 
   if (isObs) {
     circle
