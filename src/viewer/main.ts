@@ -10,6 +10,94 @@ let observationEnabled = new Set<string>();
 let rememberedHard = new Map<string, string>();
 let rememberedSoft = new Map<string, Map<string, number>>();
 let nodePositions = new Map<string, { x: number; y: number }>();
+// Track current source for hash serialization
+let currentSource: { type: 'builtin'; name: string } | { type: 'custom'; xmlbif: string } =
+  { type: 'builtin', name: 'dogproblem.xmlbif' };
+
+// ─── Hash state persistence ─────────────────────────────────────────
+
+interface SerializedState {
+  s: { t: 'b'; n: string } | { t: 'c'; x: string }; // source
+  h?: Record<string, string>;                          // hard evidence
+  e?: Record<string, Record<string, number>>;          // soft evidence
+  o?: string[];                                        // enabled observations
+}
+
+async function compress(data: string): Promise<string> {
+  const stream = new Blob([data]).stream().pipeThrough(new CompressionStream('deflate'));
+  const buf = await new Response(stream).arrayBuffer();
+  return btoa(String.fromCharCode(...new Uint8Array(buf)));
+}
+
+async function decompress(b64: string): Promise<string> {
+  const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const stream = new Blob([bin]).stream().pipeThrough(new DecompressionStream('deflate'));
+  return new Response(stream).text();
+}
+
+let hashWriteTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function saveStateToHash() {
+  // Debounce to avoid hammering the hash on rapid slider drags
+  if (hashWriteTimeout) clearTimeout(hashWriteTimeout);
+  hashWriteTimeout = setTimeout(async () => {
+    const state: SerializedState = {
+      s: currentSource.type === 'builtin' ? { t: 'b', n: currentSource.name } : { t: 'c', x: currentSource.xmlbif },
+    };
+    if (hardEvidence.size > 0) {
+      state.h = {};
+      for (const [k, v] of hardEvidence) if (observationEnabled.has(k)) state.h[k] = v;
+      if (Object.keys(state.h).length === 0) delete state.h;
+    }
+    if (softEvidence.size > 0) {
+      state.e = {};
+      for (const [k, v] of softEvidence) if (observationEnabled.has(k)) state.e[k] = Object.fromEntries(v);
+      if (Object.keys(state.e).length === 0) delete state.e;
+    }
+    if (observationEnabled.size > 0) state.o = [...observationEnabled];
+    try {
+      const encoded = await compress(JSON.stringify(state));
+      history.replaceState(null, '', '#' + encoded);
+    } catch { /* ignore compression failures */ }
+  }, 300);
+}
+
+async function loadStateFromHash(): Promise<boolean> {
+  const hash = location.hash.slice(1);
+  if (!hash) return false;
+  try {
+    const json = await decompress(hash);
+    const state: SerializedState = JSON.parse(json);
+
+    // Load network
+    if (state.s.t === 'b') {
+      currentSource = { type: 'builtin', name: state.s.n };
+      const select = document.getElementById('example-select') as HTMLSelectElement;
+      select.value = state.s.n;
+      const resp = await fetch(exampleUrl(state.s.n));
+      if (!resp.ok) return false;
+      network = BayesianNetwork.fromXmlBif(await resp.text());
+    } else {
+      currentSource = { type: 'custom', xmlbif: state.s.x };
+      network = BayesianNetwork.fromXmlBif(state.s.x);
+    }
+
+    // Restore evidence
+    hardEvidence = new Map(Object.entries(state.h ?? {}));
+    softEvidence = new Map(Object.entries(state.e ?? {}).map(([k, v]) => [k, new Map(Object.entries(v))]));
+    observationEnabled = new Set(state.o ?? []);
+    rememberedHard = new Map(); rememberedSoft = new Map();
+    nodePositions = new Map();
+
+    document.getElementById('network-name')!.textContent = network.name;
+    autoLayout();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ─── Loading ─────────────────────────────────────────────────────────
 
 function exampleUrl(filename: string): string {
   return new URL(`../examples/${filename}`, import.meta.url).href;
@@ -18,7 +106,8 @@ function exampleUrl(filename: string): string {
 async function loadExampleFile(filename: string) {
   const resp = await fetch(exampleUrl(filename));
   if (!resp.ok) throw new Error(`Failed to load ${filename}: ${resp.status}`);
-  loadNetwork(await resp.text());
+  currentSource = { type: 'builtin', name: filename };
+  loadNetwork(await resp.text(), false);
 }
 
 async function loadExample() {
@@ -26,12 +115,13 @@ async function loadExample() {
   await loadExampleFile(select.value);
 }
 
-function loadNetwork(xmlbif: string) {
+function loadNetwork(xmlbif: string, isCustom = true) {
   network = BayesianNetwork.fromXmlBif(xmlbif);
   hardEvidence = new Map(); softEvidence = new Map();
   observationEnabled = new Set();
   rememberedHard = new Map(); rememberedSoft = new Map();
   nodePositions = new Map();
+  if (isCustom) currentSource = { type: 'custom', xmlbif };
   document.getElementById('network-name')!.textContent = network.name;
   autoLayout();
 }
@@ -177,6 +267,7 @@ function render() {
   const [he, se] = effectiveEvidence();
   const result = network.infer(he, se);
   renderGraph(network, result.posteriors);
+  saveStateToHash();
   if (window.parent !== window) {
     const d: Record<string, Record<string, number>> = {};
     for (const [v, dist] of result.posteriors) d[v.name] = Object.fromEntries(dist);
@@ -527,4 +618,5 @@ function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Va
   }
 }
 
-loadExampleFile('dogproblem.xmlbif');
+// Boot: restore from hash or load default
+loadStateFromHash().then(ok => { if (!ok) loadExampleFile('dogproblem.xmlbif'); });
