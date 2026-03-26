@@ -802,11 +802,12 @@ function drawEdges(net: BayesianNetwork) {
     }
   }
 
-  // Group edges by (node, side) to distribute slots
-  const sideEdges = new Map<string, EdgeInfo[]>(); // "varName:side" → edges
+  // Group edges by (node, side, direction) to distribute slots
+  // "varName:side:out" for edges leaving this node, "varName:side:in" for arriving
+  const sideEdges = new Map<string, EdgeInfo[]>();
   for (const ei of edgeInfos) {
-    const fk = `${ei.parent.name}:${ei.fromSide}`;
-    const tk = `${ei.child.name}:${ei.toSide}`;
+    const fk = `${ei.parent.name}:${ei.fromSide}:out`;
+    const tk = `${ei.child.name}:${ei.toSide}:in`;
     if (!sideEdges.has(fk)) sideEdges.set(fk, []);
     sideEdges.get(fk)!.push(ei);
     if (!sideEdges.has(tk)) sideEdges.set(tk, []);
@@ -818,7 +819,8 @@ function drawEdges(net: BayesianNetwork) {
   // Tangent vectors: top/bottom → (1,0), left/right → (0,1)
   // We project (otherPos - nodePos) onto the tangent to get a scalar for sorting.
   for (const [key, edges] of sideEdges) {
-    const [varName, side] = key.split(':') as [string, Side];
+    const parts = key.split(':');
+    const varName = parts[0], side = parts[1] as Side, dir = parts[2];
     const nodePos = nodePositions.get(varName)!;
     // Tangent along the edge surface
     const tx = (side === 'top' || side === 'bottom') ? 1 : 0;
@@ -857,12 +859,12 @@ function drawEdges(net: BayesianNetwork) {
   for (const ei of edgeInfos) {
     const f = nodePositions.get(ei.parent.name)!, t = nodePositions.get(ei.child.name)!;
 
-    const fKey = `${ei.parent.name}:${ei.fromSide}`;
+    const fKey = `${ei.parent.name}:${ei.fromSide}:out`;
     const fEdges = sideEdges.get(fKey)!;
     const fIdx = fEdges.indexOf(ei);
     const from = getSlotPos(f, nodeW(ei.parent), nodeH(ei.parent), ei.fromSide, fIdx, fEdges.length);
 
-    const tKey = `${ei.child.name}:${ei.toSide}`;
+    const tKey = `${ei.child.name}:${ei.toSide}:in`;
     const tEdges = sideEdges.get(tKey)!;
     const tIdx = tEdges.indexOf(ei);
     const to = getSlotPos(t, nodeW(ei.child), nodeH(ei.child), ei.toSide, tIdx, tEdges.length);
