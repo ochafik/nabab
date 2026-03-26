@@ -747,140 +747,104 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
 
 function drawEdges(net: BayesianNetwork) {
   if (!_edgeGroup) return;
-  _edgeGroup.selectAll('line').remove();
+  _edgeGroup.selectAll('*').remove();
 
-  // Group edges by target (incoming) and source (outgoing) to distribute slots
-  const incoming = new Map<string, Array<{ parent: Variable; child: Variable }>>();
-  const outgoing = new Map<string, Array<{ parent: Variable; child: Variable }>>();
-  for (const cpt of net.cpts) {
-    for (const p of cpt.parents) {
-      const edge = { parent: p, child: cpt.variable };
-      if (!incoming.has(cpt.variable.name)) incoming.set(cpt.variable.name, []);
-      incoming.get(cpt.variable.name)!.push(edge);
-      if (!outgoing.has(p.name)) outgoing.set(p.name, []);
-      outgoing.get(p.name)!.push(edge);
-    }
-  }
-
-  // Sort each group by the OTHER endpoint's x-position to minimize crossings
-  for (const [name, edges] of incoming) {
-    edges.sort((a, b) => (nodePositions.get(a.parent.name)?.x ?? 0) - (nodePositions.get(b.parent.name)?.x ?? 0));
-  }
-  for (const [name, edges] of outgoing) {
-    edges.sort((a, b) => (nodePositions.get(a.child.name)?.x ?? 0) - (nodePositions.get(b.child.name)?.x ?? 0));
-  }
-
-  // Compute slot position along the edge of a node
-  function slotX(nodeX: number, nw: number, index: number, count: number): number {
-    if (count <= 1) return nodeX;
-    const span = Math.min(nw - 30, (count - 1) * 20);
-    return nodeX - span / 2 + (span * index) / (count - 1);
-  }
-
-  // For each node+side, collect which edges attach there so we can space them
   type Side = 'top' | 'bottom' | 'left' | 'right';
-  interface EdgeInfo { parent: Variable; child: Variable; fromSide: Side; toSide: Side; }
 
-  function getSide(from: { x: number; y: number }, fw: number, fh: number,
-                   to: { x: number; y: number }): Side {
-    const dx = to.x - from.x, dy = to.y - from.y;
-    const hw = fw / 2, hh = fh / 2;
-    if (Math.abs(dy) * hw > Math.abs(dx) * hh) return dy > 0 ? 'bottom' : 'top';
+  function pickSide(ax: number, ay: number, aw: number, ah: number,
+                    bx: number, by: number): Side {
+    const dx = bx - ax, dy = by - ay;
+    if (Math.abs(dy) * aw > Math.abs(dx) * ah) return dy > 0 ? 'bottom' : 'top';
     return dx > 0 ? 'right' : 'left';
   }
 
-  // Pre-compute side for every edge
-  const edgeInfos: EdgeInfo[] = [];
+  function tangent(s: Side): [number, number] {
+    return (s === 'top' || s === 'bottom') ? [1, 0] : [0, 1];
+  }
+
+  function slotXY(cx: number, cy: number, w: number, h: number,
+                  side: Side, idx: number, count: number): [number, number] {
+    const hw = w / 2, hh = h / 2, sp = 12;
+    if (count <= 1) {
+      if (side === 'top') return [cx, cy - hh];
+      if (side === 'bottom') return [cx, cy + hh];
+      if (side === 'left') return [cx - hw, cy];
+      return [cx + hw, cy];
+    }
+    if (side === 'top' || side === 'bottom') {
+      const span = Math.min(w - 20, (count - 1) * sp);
+      return [cx - span / 2 + span * idx / (count - 1), cy + (side === 'bottom' ? hh : -hh)];
+    }
+    const span = Math.min(h - 10, (count - 1) * sp);
+    return [cx + (side === 'right' ? hw : -hw), cy - span / 2 + span * idx / (count - 1)];
+  }
+
+  // Build edges with side info
+  interface E { pn: string; cn: string; ps: Side; cs: Side; }
+  const allEdges: E[] = [];
   for (const cpt of net.cpts) {
     for (const p of cpt.parents) {
-      const f = nodePositions.get(p.name)!, t = nodePositions.get(cpt.variable.name)!;
-      edgeInfos.push({
-        parent: p, child: cpt.variable,
-        fromSide: getSide(f, nodeW(p), nodeH(p), t),
-        toSide: getSide(t, nodeW(cpt.variable), nodeH(cpt.variable), f),
+      const fp = nodePositions.get(p.name)!, tp = nodePositions.get(cpt.variable.name)!;
+      allEdges.push({
+        pn: p.name, cn: cpt.variable.name,
+        ps: pickSide(fp.x, fp.y, nodeW(p), nodeH(p), tp.x, tp.y),
+        cs: pickSide(tp.x, tp.y, nodeW(cpt.variable), nodeH(cpt.variable), fp.x, fp.y),
       });
     }
   }
 
-  // Group edges by (node, side, direction) to distribute slots
-  // "varName:side:out" for edges leaving this node, "varName:side:in" for arriving
-  const sideEdges = new Map<string, EdgeInfo[]>();
-  for (const ei of edgeInfos) {
-    const fk = `${ei.parent.name}:${ei.fromSide}:out`;
-    const tk = `${ei.child.name}:${ei.toSide}:in`;
-    if (!sideEdges.has(fk)) sideEdges.set(fk, []);
-    sideEdges.get(fk)!.push(ei);
-    if (!sideEdges.has(tk)) sideEdges.set(tk, []);
-    sideEdges.get(tk)!.push(ei);
+  // Group by (node, side, dir) — use Map<string, number[]> storing indices into allEdges
+  const groups = new Map<string, number[]>();
+  for (let i = 0; i < allEdges.length; i++) {
+    const e = allEdges[i];
+    const fk = e.pn + '|' + e.ps + '|o';
+    const tk = e.cn + '|' + e.cs + '|i';
+    if (!groups.has(fk)) groups.set(fk, []);
+    groups.get(fk)!.push(i);
+    if (!groups.has(tk)) groups.set(tk, []);
+    groups.get(tk)!.push(i);
   }
 
-  // Sort each side group by projecting the other endpoint onto the
-  // edge's tangent vector, so slots match the angular order of connections.
-  // Tangent vectors: top/bottom → (1,0), left/right → (0,1)
-  // We project (otherPos - nodePos) onto the tangent to get a scalar for sorting.
-  for (const [key, edges] of sideEdges) {
-    const parts = key.split(':');
-    const varName = parts[0], side = parts[1] as Side, dir = parts[2];
-    const nodePos = nodePositions.get(varName)!;
-    // Tangent along the edge surface
-    const tx = (side === 'top' || side === 'bottom') ? 1 : 0;
-    const ty = (side === 'left' || side === 'right') ? 1 : 0;
-
-    edges.sort((a, b) => {
-      const isFromA = a.parent.name === varName;
-      const isFromB = b.parent.name === varName;
-      const otherA = nodePositions.get(isFromA ? a.child.name : a.parent.name)!;
-      const otherB = nodePositions.get(isFromB ? b.child.name : b.parent.name)!;
-      // Project vector (other - node) onto tangent
-      const projA = (otherA.x - nodePos.x) * tx + (otherA.y - nodePos.y) * ty;
-      const projB = (otherB.x - nodePos.x) * tx + (otherB.y - nodePos.y) * ty;
-      return projA - projB;
+  // Sort each group by projection of other-endpoint onto tangent
+  for (const [key, indices] of groups) {
+    const [nodeName, side] = key.split('|') as [string, Side];
+    const np = nodePositions.get(nodeName)!;
+    const [tx, ty] = tangent(side);
+    indices.sort((ai, bi) => {
+      const a = allEdges[ai], b = allEdges[bi];
+      const oa = nodePositions.get(a.pn === nodeName ? a.cn : a.pn)!;
+      const ob = nodePositions.get(b.pn === nodeName ? b.cn : b.pn)!;
+      return ((oa.x - np.x) * tx + (oa.y - np.y) * ty)
+           - ((ob.x - np.x) * tx + (ob.y - np.y) * ty);
     });
   }
 
-  function getSlotPos(
-    pos: { x: number; y: number }, nw: number, nh: number,
-    side: Side, slotIdx: number, slotCount: number,
-  ): { x: number; y: number } {
-    const hw = nw / 2, hh = nh / 2;
-    const spacing = 12;
-    if (side === 'top' || side === 'bottom') {
-      const span = Math.min(nw - 20, (slotCount - 1) * spacing);
-      const x = slotCount <= 1 ? pos.x : pos.x - span / 2 + span * slotIdx / (slotCount - 1);
-      return { x, y: pos.y + (side === 'bottom' ? hh : -hh) };
-    } else {
-      const span = Math.min(nh - 10, (slotCount - 1) * spacing);
-      const y = slotCount <= 1 ? pos.y : pos.y - span / 2 + span * slotIdx / (slotCount - 1);
-      return { x: pos.x + (side === 'right' ? hw : -hw), y };
-    }
-  }
+  // Build slot index lookup: edgeIdx → { fromSlot, fromCount, toSlot, toCount }
+  const slots = allEdges.map((e, i) => {
+    const fk = e.pn + '|' + e.ps + '|o';
+    const tk = e.cn + '|' + e.cs + '|i';
+    const fg = groups.get(fk)!;
+    const tg = groups.get(tk)!;
+    return {
+      fi: fg.indexOf(i), fc: fg.length,
+      ti: tg.indexOf(i), tc: tg.length,
+    };
+  });
 
-  // Draw edges
-  for (const ei of edgeInfos) {
-    const f = nodePositions.get(ei.parent.name)!, t = nodePositions.get(ei.child.name)!;
-
-    const fKey = `${ei.parent.name}:${ei.fromSide}:out`;
-    const fEdges = sideEdges.get(fKey)!;
-    const fIdx = fEdges.indexOf(ei);
-    const from = getSlotPos(f, nodeW(ei.parent), nodeH(ei.parent), ei.fromSide, fIdx, fEdges.length);
-
-    const tKey = `${ei.child.name}:${ei.toSide}:in`;
-    const tEdges = sideEdges.get(tKey)!;
-    const tIdx = tEdges.indexOf(ei);
-    const to = getSlotPos(t, nodeW(ei.child), nodeH(ei.child), ei.toSide, tIdx, tEdges.length);
-
-    // Offset arrow tip slightly so marker doesn't overlap the node border
-    const dx = to.x - from.x, dy = to.y - from.y;
-    const len = Math.sqrt(dx * dx + dy * dy) || 1;
-    const tipOffset = 4;
-
+  // Draw
+  for (let i = 0; i < allEdges.length; i++) {
+    const e = allEdges[i], s = slots[i];
+    const fp = nodePositions.get(e.pn)!, tp = nodePositions.get(e.cn)!;
+    const pv = net.getVariable(e.pn)!, cv = net.getVariable(e.cn)!;
+    const [x1, y1] = slotXY(fp.x, fp.y, nodeW(pv), nodeH(pv), e.ps, s.fi, s.fc);
+    const [x2, y2] = slotXY(tp.x, tp.y, nodeW(cv), nodeH(cv), e.cs, s.ti, s.tc);
+    const dx = x2 - x1, dy = y2 - y1, len = Math.sqrt(dx * dx + dy * dy) || 1;
     _edgeGroup.append('line')
-      .attr('x1', from.x).attr('y1', from.y)
-      .attr('x2', to.x - dx / len * tipOffset).attr('y2', to.y - dy / len * tipOffset)
+      .attr('x1', x1).attr('y1', y1)
+      .attr('x2', x2 - dx / len * 4).attr('y2', y2 - dy / len * 4)
       .attr('stroke', 'var(--edge)').attr('stroke-width', 1.5).attr('marker-end', 'url(#arr)');
   }
 }
-
 /**
  * Snap-zone targets at slider endpoints (only when NOT already snapped).
  * When snapped, the handle itself shows an X on hover; click-without-drag clears.
