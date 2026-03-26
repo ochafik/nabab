@@ -9,6 +9,8 @@ let softEvidence: LikelihoodEvidence = new Map();
 let observationEnabled = new Set<string>();
 let rememberedHard = new Map<string, string>();
 let rememberedSoft = new Map<string, Map<string, number>>();
+/** Which outcomes have been explicitly tweaked by the user (bold labels). */
+let tweakedOutcomes = new Map<string, Set<string>>();
 let nodePositions = new Map<string, { x: number; y: number }>();
 let selectedNodes = new Set<string>();
 
@@ -100,7 +102,7 @@ async function loadStateFromHash(): Promise<boolean> {
     hardEvidence = new Map(Object.entries(state.h ?? {}));
     softEvidence = new Map(Object.entries(state.e ?? {}).map(([k, v]) => [k, new Map(Object.entries(v))]));
     observationEnabled = new Set(state.o ?? []);
-    rememberedHard = new Map(); rememberedSoft = new Map();
+    rememberedHard = new Map(); rememberedSoft = new Map(); tweakedOutcomes = new Map();
 
     // Restore node positions (or auto-layout if none saved)
     if (state.p) {
@@ -272,6 +274,7 @@ function effectiveEvidence(): [Evidence | undefined, LikelihoodEvidence | undefi
 function toggleEye(v: Variable) {
   if (observationEnabled.has(v.name)) {
     observationEnabled.delete(v.name);
+    tweakedOutcomes.delete(v.name);
     if (hardEvidence.has(v.name)) rememberedHard.set(v.name, hardEvidence.get(v.name)!);
     if (softEvidence.has(v.name)) rememberedSoft.set(v.name, softEvidence.get(v.name)!);
   } else {
@@ -323,16 +326,105 @@ function setSlider(v: Variable, trueRatio: number) {
 function cycleOutcome(v: Variable, i: number) {
   const o = v.outcomes[i];
   if (!observationEnabled.has(v.name)) {
+    // Not observed → snap to 100% for this outcome
     hardEvidence.set(v.name, o); softEvidence.delete(v.name); observationEnabled.add(v.name);
-  } else if (hardEvidence.get(v.name) === o) {
-    hardEvidence.delete(v.name);
-    const w = new Map<string, number>();
-    v.outcomes.forEach((x, j) => w.set(x, j === i ? 0 : 1 / (v.outcomes.length - 1)));
-    softEvidence.set(v.name, w);
-  } else if (softEvidence.has(v.name) && (softEvidence.get(v.name)!.get(o) ?? 1) < 0.01) {
-    hardEvidence.delete(v.name); softEvidence.delete(v.name); observationEnabled.delete(v.name);
+    tweakedOutcomes.set(v.name, new Set(v.outcomes));
+    render(); return;
+  }
+  // If this outcome is tweaked → un-tweak it (clear just this one)
+  const tweaked = tweakedOutcomes.get(v.name);
+  if (tweaked?.has(o)) {
+    clearOutcomeTweak(v, i);
+    return;
+  }
+  // If not tweaked → snap to 100% for this outcome
+  hardEvidence.set(v.name, o); softEvidence.delete(v.name);
+  tweakedOutcomes.set(v.name, new Set(v.outcomes));
+  render();
+}
+
+/** Get current weights for a multi-class variable (evidence or posterior). */
+function getWeights(v: Variable, posteriors?: Map<Variable, Distribution>): Map<string, number> {
+  if (hardEvidence.has(v.name)) {
+    const h = hardEvidence.get(v.name)!;
+    return new Map(v.outcomes.map(o => [o, o === h ? 1 : 0]));
+  }
+  if (softEvidence.has(v.name)) return new Map(softEvidence.get(v.name)!);
+  // Fall back to posteriors or uniform
+  if (posteriors) {
+    const dist = posteriors.get(v);
+    if (dist) return new Map(dist);
+  }
+  return new Map(v.outcomes.map(o => [o, 1 / v.outcomes.length]));
+}
+
+/** Set a single outcome's weight, rescale floating (non-tweaked) outcomes. */
+function setMultiWeight(v: Variable, outcomeIdx: number, value: number) {
+  const o = v.outcomes[outcomeIdx];
+  hardEvidence.delete(v.name);
+  observationEnabled.add(v.name);
+
+  // Init weights from current state if needed
+  const w = softEvidence.has(v.name) ? new Map(softEvidence.get(v.name)!) : getWeights(v);
+  if (!tweakedOutcomes.has(v.name)) tweakedOutcomes.set(v.name, new Set());
+  const tweaked = tweakedOutcomes.get(v.name)!;
+  tweaked.add(o);
+
+  // Set this outcome
+  w.set(o, value);
+
+  // Remaining budget for floating outcomes
+  let tweakedSum = 0;
+  for (const t of tweaked) tweakedSum += w.get(t) ?? 0;
+  const remaining = Math.max(0, 1 - tweakedSum);
+
+  // Distribute remaining among floating (non-tweaked) outcomes
+  const floating = v.outcomes.filter(x => !tweaked.has(x));
+  if (floating.length > 0) {
+    const floatSum = floating.reduce((s, x) => s + (w.get(x) ?? 0), 0);
+    for (const f of floating) {
+      w.set(f, floatSum > 0 ? (w.get(f) ?? 0) / floatSum * remaining : remaining / floating.length);
+    }
+  } else if (tweakedSum !== 1) {
+    // All tweaked but don't sum to 1 — scale all proportionally
+    for (const t of tweaked) w.set(t, (w.get(t) ?? 0) / tweakedSum);
+  }
+
+  // Snap to hard evidence if one is ~100%
+  for (const x of v.outcomes) {
+    if ((w.get(x) ?? 0) > 0.995) {
+      hardEvidence.set(v.name, x); softEvidence.delete(v.name);
+      tweakedOutcomes.set(v.name, new Set(v.outcomes));
+      render(); return;
+    }
+  }
+
+  softEvidence.set(v.name, w);
+  render();
+}
+
+/** Clear a single outcome's tweak (make it floating). */
+function clearOutcomeTweak(v: Variable, outcomeIdx: number) {
+  const tweaked = tweakedOutcomes.get(v.name);
+  if (!tweaked) return;
+  tweaked.delete(v.outcomes[outcomeIdx]);
+
+  if (tweaked.size === 0) {
+    // No tweaks left → clear observation entirely
+    hardEvidence.delete(v.name); softEvidence.delete(v.name);
+    observationEnabled.delete(v.name); tweakedOutcomes.delete(v.name);
   } else {
-    hardEvidence.set(v.name, o); softEvidence.delete(v.name);
+    // Redistribute: un-tweaked outcome becomes floating
+    const w = softEvidence.has(v.name) ? new Map(softEvidence.get(v.name)!) : getWeights(v);
+    let tweakedSum = 0;
+    for (const t of tweaked) tweakedSum += w.get(t) ?? 0;
+    const remaining = Math.max(0, 1 - tweakedSum);
+    const floating = v.outcomes.filter(x => !tweaked.has(x));
+    const floatSum = floating.reduce((s, x) => s + (w.get(x) ?? 0), 0);
+    for (const f of floating) {
+      w.set(f, floatSum > 0 ? (w.get(f) ?? 0) / floatSum * remaining : remaining / floating.length);
+    }
+    softEvidence.set(v.name, w);
   }
   render();
 }
@@ -833,11 +925,16 @@ function boolSlider(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: V
 
 function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Variable, dist: Distribution, w: number, h: number, accent: string) {
   const isObs = observationEnabled.has(v.name);
-  const clearAll = () => { hardEvidence.delete(v.name); softEvidence.delete(v.name); observationEnabled.delete(v.name); render(); };
+  const tweaked = tweakedOutcomes.get(v.name) ?? new Set<string>();
 
-  // Layout: label (right-aligned) [gap] bar+thumb [gap] pct
+  // Get display weights: evidence weights when observed, posteriors when not
+  const weights = getWeights(v, undefined);
+  // When observed, use evidence weights; when not, use posteriors
+  const displayW = isObs ? weights : new Map(v.outcomes.map(o => [o, dist.get(o) ?? 0]));
+
+  // Layout columns
   const pctColW = 38;
-  const labelColW = Math.max(...v.outcomes.map(o => o.length)) * 6.5 + 4;
+  const labelColW = Math.max(...v.outcomes.map(o => o.length)) * 6.5 + 8;
   const barPad = 6;
   const thumbR = 5;
   const bw = w - 16 - labelColW - barPad - pctColW - thumbR;
@@ -847,78 +944,59 @@ function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Va
 
   for (let i = 0; i < v.outcomes.length; i++) {
     const o = v.outcomes[i];
-    const prob = dist.get(o) ?? 0;
-    const pct = Math.round(prob * 100);
+    const val = displayW.get(o) ?? 0; // bar = thumb = % = this value
+    const pct = Math.round(val * 100);
     const by = y + 2;
+    const textY = by + 3;
+    const isTweaked = tweaked.has(o);
 
-    // Thumb position: evidence when observed, posterior otherwise
-    const evidenceW = isObs && softEvidence.has(v.name) ? (softEvidence.get(v.name)!.get(o) ?? prob) : prob;
-    const thumbPos = isObs && hardEvidence.has(v.name) ? (hardEvidence.get(v.name) === o ? 1 : 0) : evidenceW;
-
-    // Label (right-aligned, clickable)
+    // Label (right-aligned, clickable, bold if tweaked)
     const lg = g.append('g').attr('class', 'cz').attr('cursor', 'pointer')
       .on('click', (ev) => { ev.stopPropagation(); cycleOutcome(v, i); });
     lg.append('rect').attr('x', -w / 2 + 6).attr('y', by - 8).attr('width', labelColW + 4).attr('height', 16).attr('fill', 'transparent');
-    const textY = by + 3; // align with bar center
     lg.append('text').attr('x', bx - barPad).attr('y', textY)
-      .attr('font-size', '10px').attr('fill', 'var(--text-secondary)')
+      .attr('font-size', '10px')
+      .attr('fill', isTweaked ? 'var(--text)' : 'var(--text-secondary)')
+      .attr('font-weight', isTweaked ? '700' : '400')
       .attr('text-anchor', 'end').attr('dominant-baseline', 'central').text(o);
 
-    // Percentage (right side, with gap from bar end)
+    // Percentage
     g.append('text').attr('x', w / 2 - 8).attr('y', textY)
       .attr('font-size', '10px').attr('font-weight', '600').attr('fill', 'var(--text)')
       .attr('text-anchor', 'end').attr('dominant-baseline', 'central')
       .text(`${pct}%`);
 
-    // Bar: fill shows POSTERIOR (matches %) — thumb shows evidence position
+    // Bar background (click-to-jump)
     const barHit = g.append('rect').attr('x', bx).attr('y', by - 4).attr('width', bw).attr('height', 14)
       .attr('fill', 'transparent').attr('cursor', 'pointer').attr('class', 'cz');
     g.append('rect').attr('x', bx).attr('y', by).attr('width', bw).attr('height', 6)
       .attr('rx', 3).attr('fill', 'var(--bg-bar)').attr('pointer-events', 'none');
-    if (prob > 0.005)
-      g.append('rect').attr('x', bx).attr('y', by).attr('width', Math.max(3, bw * prob)).attr('height', 6)
+    if (val > 0.005)
+      g.append('rect').attr('x', bx).attr('y', by).attr('width', Math.max(3, bw * val)).attr('height', 6)
         .attr('rx', 3).attr('fill', accent).attr('opacity', 0.6).attr('pointer-events', 'none');
 
-    // Click-to-jump on bar
     const idx = i;
-    const setMulti = (ratio: number) => {
-      hardEvidence.delete(v.name); observationEnabled.add(v.name);
-      if (!softEvidence.has(v.name)) softEvidence.set(v.name, new Map(v.outcomes.map(x => [x, 1 / v.outcomes.length])));
-      const wt = softEvidence.get(v.name)!;
-      const otherTotal = [...wt].reduce((s, [k, val]) => k === v.outcomes[idx] ? s : s + val, 0);
-      wt.set(v.outcomes[idx], ratio);
-      if (otherTotal > 0) {
-        const sc = Math.max(0, 1 - ratio) / otherTotal;
-        for (let j = 0; j < v.outcomes.length; j++) if (j !== idx) wt.set(v.outcomes[j], (wt.get(v.outcomes[j]) ?? 0) * sc);
-      }
-      if (ratio > 0.995) { hardEvidence.set(v.name, v.outcomes[idx]); softEvidence.delete(v.name); }
-      else if (ratio < 0.005) {
-        const allUniform = [...wt.values()].every((x, _, a) => Math.abs(x - a[0]) < 0.02);
-        if (allUniform) { softEvidence.delete(v.name); observationEnabled.delete(v.name); }
-      }
-      render();
-    };
-
     barHit.on('click', (ev) => {
       ev.stopPropagation();
       const pt = (ev.target as SVGElement).ownerSVGElement!.createSVGPoint();
       pt.x = ev.clientX; pt.y = ev.clientY;
       const local = pt.matrixTransform((ev.target as SVGGraphicsElement).getScreenCTM()!.inverse());
-      setMulti(Math.max(0, Math.min(1, (local.x - bx) / bw)));
+      setMultiWeight(v, idx, Math.max(0, Math.min(1, (local.x - bx) / bw)));
     });
 
-    // Thumb with clear-on-click
-    addSliderThumb(g, bx + bw * thumbPos, by + 3, 5, accent, isObs,
-      () => {}, (x) => setMulti((x - bx) / bw), clearAll, bx, bx + bw);
+    // Thumb: clear-on-click clears THIS outcome's tweak only (if tweaked)
+    const clearThis = isTweaked ? () => clearOutcomeTweak(v, idx) : () => {};
+    addSliderThumb(g, bx + bw * val, by + 3, 5, accent, isTweaked,
+      () => {}, (x) => setMultiWeight(v, idx, (x - bx) / bw), clearThis, bx, bx + bw);
 
     // Snap zones
     const isSnapped100 = isObs && hardEvidence.get(v.name) === o;
-    const isSnapped0 = isObs && softEvidence.has(v.name) && (softEvidence.get(v.name)!.get(o) ?? 1) < 0.01;
+    const isSnapped0 = val < 0.01 && isTweaked;
     addSnapZones(g, bx, by, bw, 6, [
       { x: bx, label: `Click to exclude ${o}`, isSnapped: isSnapped0,
-        snap: () => { hardEvidence.delete(v.name); const wt = new Map<string, number>(); v.outcomes.forEach((x, j) => wt.set(x, j === i ? 0 : 1 / (v.outcomes.length - 1))); softEvidence.set(v.name, wt); observationEnabled.add(v.name); render(); } },
+        snap: () => setMultiWeight(v, i, 0) },
       { x: bx + bw, label: `Click to observe as ${o}`, isSnapped: isSnapped100,
-        snap: () => { hardEvidence.set(v.name, o); softEvidence.delete(v.name); observationEnabled.add(v.name); render(); } },
+        snap: () => { hardEvidence.set(v.name, o); softEvidence.delete(v.name); observationEnabled.add(v.name); tweakedOutcomes.set(v.name, new Set(v.outcomes)); render(); } },
     ]);
 
     y += NODE_H_PER_OUTCOME;
