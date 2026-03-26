@@ -10,6 +10,8 @@ let observationEnabled = new Set<string>();
 let rememberedHard = new Map<string, string>();
 let rememberedSoft = new Map<string, Map<string, number>>();
 let nodePositions = new Map<string, { x: number; y: number }>();
+let selectedNodes = new Set<string>();
+
 // Track current source for hash serialization
 let currentSource: { type: 'builtin'; name: string } | { type: 'custom'; xmlbif: string } =
   { type: 'builtin', name: 'dogproblem.xmlbif' };
@@ -151,6 +153,54 @@ function loadNetwork(xmlbif: string, isCustom = true) {
   document.getElementById('network-name')!.textContent = network.name;
   autoLayout();
 }
+
+// ─── Selection ───────────────────────────────────────────────────────
+
+function selectNode(name: string, additive: boolean) {
+  if (additive) {
+    if (selectedNodes.has(name)) selectedNodes.delete(name);
+    else selectedNodes.add(name);
+  } else {
+    if (selectedNodes.has(name) && selectedNodes.size === 1) selectedNodes.clear();
+    else { selectedNodes.clear(); selectedNodes.add(name); }
+  }
+  render();
+}
+
+function clearSelection() {
+  if (selectedNodes.size > 0) { selectedNodes.clear(); render(); }
+}
+
+// Space: cycle eyes on selected nodes
+document.addEventListener('keydown', (e) => {
+  if (e.code !== 'Space' || selectedNodes.size === 0) return;
+  if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'SELECT') return;
+  e.preventDefault();
+  const names = [...selectedNodes];
+  const allOn = names.every(n => observationEnabled.has(n));
+  const allOff = names.every(n => !observationEnabled.has(n));
+  for (const name of names) {
+    const v = network?.getVariable(name);
+    if (!v) continue;
+    if (allOff) {
+      // All off → turn all on
+      observationEnabled.add(name);
+      if (!hardEvidence.has(name) && !softEvidence.has(name)) {
+        if (rememberedHard.has(name)) hardEvidence.set(name, rememberedHard.get(name)!);
+        else if (rememberedSoft.has(name)) softEvidence.set(name, rememberedSoft.get(name)!);
+        else hardEvidence.set(name, v.outcomes[0]);
+      }
+    } else {
+      // Some or all on → turn all off (remember state)
+      if (hardEvidence.has(name)) rememberedHard.set(name, hardEvidence.get(name)!);
+      if (softEvidence.has(name)) rememberedSoft.set(name, softEvidence.get(name)!);
+      observationEnabled.delete(name);
+    }
+  }
+  render();
+});
+
+// ─── Event listeners ─────────────────────────────────────────────────
 
 document.getElementById('btn-load-example')!.addEventListener('click', loadExample);
 document.getElementById('example-select')!.addEventListener('change', loadExample);
@@ -374,6 +424,7 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
     .scaleExtent([0.1, 4])
     .on('zoom', (ev) => contentG.attr('transform', ev.transform));
   svg.call(_zoomBehavior);
+  svg.on('click', (ev) => { if (ev.target === svg.node()) clearSelection(); });
   // Restore previous zoom transform
   if (_savedTransform !== d3.zoomIdentity) {
     svg.call(_zoomBehavior.transform, _savedTransform);
@@ -406,16 +457,57 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
     const nodeAccent = isHard ? 'var(--accent-hard)' : isSoft ? 'var(--accent-soft)'
       : `hsl(${hue}, 55%, ${isDark ? 55 : 45}%)`;
 
+    const isSel = selectedNodes.has(v.name);
+
+    // Selection highlight (behind the node)
+    if (isSel) {
+      ng.append('rect').attr('x', -NODE_W / 2 - 3).attr('y', -h / 2 - 3)
+        .attr('width', NODE_W + 6).attr('height', h + 6).attr('rx', 10)
+        .attr('fill', 'none').attr('stroke', 'var(--accent)').attr('stroke-width', 2.5)
+        .attr('stroke-dasharray', '4,2').attr('opacity', 0.8);
+    }
+
     ng.append('rect').attr('x', -NODE_W / 2).attr('y', -h / 2)
       .attr('width', NODE_W).attr('height', h).attr('rx', 8)
       .attr('fill', bgFill).attr('stroke', borderCol).attr('stroke-width', 1.5)
       .attr('filter', 'url(#node-shadow)');
 
-    // Node drag
+    // Node drag (moves all selected if this node is selected)
     ng.call(d3.drag<SVGGElement, unknown>()
       .filter((ev) => !(ev.target as SVGElement).classList.contains('slider-thumb') && !(ev.target as SVGElement).closest('.cz'))
-      .on('drag', (ev) => { pos.x += ev.dx; pos.y += ev.dy; nodePositions.set(v.name, { ...pos }); ng.attr('transform', `translate(${pos.x},${pos.y})`); drawEdges(net); })
+      .on('start', (ev) => {
+        // Click-to-select (on mousedown, before drag begins)
+        if (!ev.sourceEvent?.shiftKey && !isSel) { selectedNodes.clear(); }
+        selectedNodes.add(v.name);
+      })
+      .on('drag', (ev) => {
+        // Move all selected nodes together
+        const toMove = selectedNodes.has(v.name) && selectedNodes.size > 0 ? [...selectedNodes] : [v.name];
+        for (const name of toMove) {
+          const p = nodePositions.get(name);
+          if (p) { p.x += ev.dx; p.y += ev.dy; nodePositions.set(name, { ...p }); }
+        }
+        // Update all moved node group transforms
+        contentG.selectAll<SVGGElement, unknown>('.node-g').each(function () {
+          const gEl = d3.select(this);
+          const name = gEl.attr('data-var');
+          if (name && toMove.includes(name)) {
+            const p = nodePositions.get(name)!;
+            gEl.attr('transform', `translate(${p.x},${p.y})`);
+          }
+        });
+        drawEdges(net);
+      })
+      .on('end', () => render()) // re-render to update selection visuals
     ).attr('cursor', 'grab');
+
+    ng.attr('class', 'node-g').attr('data-var', v.name);
+
+    // Click on node background to select (without starting drag)
+    ng.on('click', (ev) => {
+      if ((ev.target as SVGElement).closest('.cz') || (ev.target as SVGElement).classList.contains('slider-thumb')) return;
+      selectNode(v.name, ev.shiftKey);
+    });
 
     // ── Row 1: eye icon + "label: XX%" ──
     const ry = -h / 2 + 14;
