@@ -304,12 +304,19 @@ function cycleObservation(v: Variable) {
     observationEnabled.add(v.name);
     hardEvidence.set(v.name, v.outcomes[0]);
     softEvidence.delete(v.name);
+    tweakedOutcomes.set(v.name, new Set([v.outcomes[0]]));
   } else if (cur) {
     const idx = v.outcomes.indexOf(cur);
-    if (idx < v.outcomes.length - 1) hardEvidence.set(v.name, v.outcomes[idx + 1]);
-    else { hardEvidence.delete(v.name); softEvidence.delete(v.name); observationEnabled.delete(v.name); }
+    if (idx < v.outcomes.length - 1) {
+      hardEvidence.set(v.name, v.outcomes[idx + 1]);
+      tweakedOutcomes.set(v.name, new Set([v.outcomes[idx + 1]]));
+    } else {
+      hardEvidence.delete(v.name); softEvidence.delete(v.name);
+      observationEnabled.delete(v.name); tweakedOutcomes.delete(v.name);
+    }
   } else {
     hardEvidence.set(v.name, v.outcomes[0]); softEvidence.delete(v.name);
+    tweakedOutcomes.set(v.name, new Set([v.outcomes[0]]));
   }
   render();
 }
