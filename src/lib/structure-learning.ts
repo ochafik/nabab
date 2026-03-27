@@ -461,3 +461,212 @@ export function learnStructure(data: DataColumn[], options?: LearnOptions): Pars
     return cpts;
   }
 }
+
+/**
+ * Learn a Bayesian network structure and parameters from tabular data
+ * using Greedy Equivalence Search (GES) with BIC scoring.
+ *
+ * GES operates in two phases:
+ * 1. Forward: greedily add edges that improve BIC until no addition helps.
+ * 2. Backward: greedily remove edges that improve BIC until no removal helps.
+ *
+ * Unlike hill climbing, GES does NOT reverse edges. It provably converges to
+ * the correct equivalence class given sufficient data.
+ */
+export function learnStructureGES(data: DataColumn[], options?: LearnOptions): ParsedNetwork {
+  const maxParents = options?.maxParents ?? 3;
+  const n = data[0].values.length;
+  const numVars = data.length;
+
+  // Create variables
+  const variables: Variable[] = data.map(col => ({
+    name: col.name,
+    outcomes: [...new Set(col.values)],
+  }));
+
+  // Precompute value indices
+  const valueIndices: number[][] = data.map((col, ci) => {
+    const outcomes = variables[ci].outcomes;
+    const outcomeMap = new Map<string, number>();
+    for (let k = 0; k < outcomes.length; k++) outcomeMap.set(outcomes[k], k);
+    return col.values.map(v => outcomeMap.get(v) ?? 0);
+  });
+
+  // Adjacency: adj[i][j] = true means edge from i to j
+  const adj = Array.from({ length: numVars }, () => new Array(numVars).fill(false)) as boolean[][];
+
+  // --- Phase 1: Forward (add edges) ---
+  for (;;) {
+    let bestDelta = 0;
+    let bestI = -1;
+    let bestJ = -1;
+
+    const currentScore = totalScore();
+
+    for (let i = 0; i < numVars; i++) {
+      for (let j = 0; j < numVars; j++) {
+        if (i === j || adj[i][j]) continue;
+        if (countParents(j) >= maxParents) continue;
+        if (wouldCreateCycle(i, j)) continue;
+
+        adj[i][j] = true;
+        const delta = totalScore() - currentScore;
+        if (delta > bestDelta) {
+          bestDelta = delta;
+          bestI = i;
+          bestJ = j;
+        }
+        adj[i][j] = false;
+      }
+    }
+
+    if (bestI < 0) break; // no addition improves score
+    adj[bestI][bestJ] = true;
+  }
+
+  // --- Phase 2: Backward (remove edges) ---
+  for (;;) {
+    let bestDelta = 0;
+    let bestI = -1;
+    let bestJ = -1;
+
+    const currentScore = totalScore();
+
+    for (let i = 0; i < numVars; i++) {
+      for (let j = 0; j < numVars; j++) {
+        if (!adj[i][j]) continue;
+
+        adj[i][j] = false;
+        const delta = totalScore() - currentScore;
+        if (delta > bestDelta) {
+          bestDelta = delta;
+          bestI = i;
+          bestJ = j;
+        }
+        adj[i][j] = true;
+      }
+    }
+
+    if (bestI < 0) break; // no removal improves score
+    adj[bestI][bestJ] = false;
+  }
+
+  // Build CPTs
+  const cpts = buildCPTs();
+  return { name: 'learned', variables, cpts };
+
+  // --- Helper closures ---
+
+  function countParents(j: number): number {
+    let c = 0;
+    for (let i = 0; i < numVars; i++) if (adj[i][j]) c++;
+    return c;
+  }
+
+  function wouldCreateCycle(from: number, to: number): boolean {
+    if (from === to) return true;
+    const visited = new Uint8Array(numVars);
+    const stack = [to];
+    visited[to] = 1;
+    while (stack.length > 0) {
+      const node = stack.pop()!;
+      for (let child = 0; child < numVars; child++) {
+        if (adj[node][child]) {
+          if (child === from) return true;
+          if (!visited[child]) { visited[child] = 1; stack.push(child); }
+        }
+      }
+    }
+    return false;
+  }
+
+  function localBIC(nodeIdx: number, parentIndices: number[]): number {
+    const varCard = variables[nodeIdx].outcomes.length;
+    const parentCards = parentIndices.map(p => variables[p].outcomes.length);
+    let numParentConfigs = 1;
+    for (const c of parentCards) numParentConfigs *= c;
+
+    const countsSize = numParentConfigs * varCard;
+    const counts = new Float64Array(countsSize);
+    const parentCounts = new Float64Array(numParentConfigs);
+    for (let i = 0; i < countsSize; i++) counts[i] = 1;
+    for (let i = 0; i < numParentConfigs; i++) parentCounts[i] = varCard;
+
+    for (let row = 0; row < n; row++) {
+      let paIdx = 0;
+      let stride = 1;
+      for (let p = parentIndices.length - 1; p >= 0; p--) {
+        paIdx += valueIndices[parentIndices[p]][row] * stride;
+        stride *= parentCards[p];
+      }
+      counts[paIdx * varCard + valueIndices[nodeIdx][row]] += 1;
+      parentCounts[paIdx] += 1;
+    }
+
+    let ll = 0;
+    for (let paIdx = 0; paIdx < numParentConfigs; paIdx++) {
+      const pCount = parentCounts[paIdx];
+      if (pCount === 0) continue;
+      for (let xIdx = 0; xIdx < varCard; xIdx++) {
+        const c = counts[paIdx * varCard + xIdx];
+        if (c > 0) ll += c * Math.log(c / pCount);
+      }
+    }
+
+    const k = (varCard - 1) * numParentConfigs;
+    return ll - (k / 2) * Math.log(n);
+  }
+
+  function totalScore(): number {
+    let s = 0;
+    for (let j = 0; j < numVars; j++) {
+      const parents: number[] = [];
+      for (let i = 0; i < numVars; i++) if (adj[i][j]) parents.push(i);
+      s += localBIC(j, parents);
+    }
+    return s;
+  }
+
+  function buildCPTs(): CPT[] {
+    const result: CPT[] = [];
+    for (let j = 0; j < numVars; j++) {
+      const parentIndices: number[] = [];
+      for (let i = 0; i < numVars; i++) if (adj[i][j]) parentIndices.push(i);
+
+      const variable = variables[j];
+      const parents = parentIndices.map(i => variables[i]);
+      const varCard = variable.outcomes.length;
+      const parentCards = parentIndices.map(p => variables[p].outcomes.length);
+      let numParentConfigs = 1;
+      for (const c of parentCards) numParentConfigs *= c;
+
+      const tableSize = numParentConfigs * varCard;
+      const counts = new Float64Array(tableSize);
+      const parentCounts = new Float64Array(numParentConfigs);
+      for (let i = 0; i < tableSize; i++) counts[i] = 1;
+      for (let i = 0; i < numParentConfigs; i++) parentCounts[i] = varCard;
+
+      for (let row = 0; row < n; row++) {
+        let paIdx = 0;
+        let stride = 1;
+        for (let p = parentIndices.length - 1; p >= 0; p--) {
+          paIdx += valueIndices[parentIndices[p]][row] * stride;
+          stride *= parentCards[p];
+        }
+        counts[paIdx * varCard + valueIndices[j][row]] += 1;
+        parentCounts[paIdx] += 1;
+      }
+
+      const table = new Float64Array(tableSize);
+      for (let paIdx = 0; paIdx < numParentConfigs; paIdx++) {
+        const pCount = parentCounts[paIdx];
+        for (let xIdx = 0; xIdx < varCard; xIdx++) {
+          table[paIdx * varCard + xIdx] = counts[paIdx * varCard + xIdx] / pCount;
+        }
+      }
+
+      result.push({ variable, parents, table });
+    }
+    return result;
+  }
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseCSV, learnStructure, computeBIC } from '../src/lib/structure-learning.js';
+import { parseCSV, learnStructure, learnStructureGES, computeBIC } from '../src/lib/structure-learning.js';
 import { BayesianNetwork } from '../src/lib/network.js';
 import type { Variable, CPT } from '../src/lib/types.js';
 import type { DataColumn } from '../src/lib/structure-learning.js';
@@ -413,5 +413,88 @@ describe('end-to-end: CSV to inference', () => {
       }
       expect(sum).toBeCloseTo(1.0, 5);
     }
+  });
+});
+
+// ===================== GES structure learning tests =====================
+
+describe('learnStructureGES', () => {
+  it('recovers a simple Rain -> Wet structure', () => {
+    const Rain: Variable = { name: 'Rain', outcomes: ['T', 'F'] };
+    const Wet: Variable = { name: 'Wet', outcomes: ['T', 'F'] };
+    const cpts: CPT[] = [
+      { variable: Rain, parents: [], table: new Float64Array([0.3, 0.7]) },
+      { variable: Wet, parents: [Rain], table: new Float64Array([0.9, 0.1, 0.2, 0.8]) },
+    ];
+
+    const data = generateData([Rain, Wet], cpts, 2000);
+    const result = learnStructureGES(data);
+
+    expect(result.variables.length).toBe(2);
+
+    const rainCPT = result.cpts.find(c => c.variable.name === 'Rain')!;
+    const wetCPT = result.cpts.find(c => c.variable.name === 'Wet')!;
+
+    // At least one should be a parent of the other (direction may vary)
+    const hasEdge =
+      rainCPT.parents.some(p => p.name === 'Wet') ||
+      wetCPT.parents.some(p => p.name === 'Rain');
+    expect(hasEdge).toBe(true);
+  });
+
+  it('recovers a 3-variable chain A -> B -> C', () => {
+    const A: Variable = { name: 'A', outcomes: ['0', '1'] };
+    const B: Variable = { name: 'B', outcomes: ['0', '1'] };
+    const C: Variable = { name: 'C', outcomes: ['0', '1'] };
+
+    const cpts: CPT[] = [
+      { variable: A, parents: [], table: new Float64Array([0.3, 0.7]) },
+      { variable: B, parents: [A], table: new Float64Array([0.9, 0.1, 0.2, 0.8]) },
+      { variable: C, parents: [B], table: new Float64Array([0.8, 0.2, 0.1, 0.9]) },
+    ];
+
+    const data = generateData([A, B, C], cpts, 3000);
+    const result = learnStructureGES(data);
+
+    // Should have at least 2 edges
+    let totalEdges = 0;
+    for (const cpt of result.cpts) totalEdges += cpt.parents.length;
+    expect(totalEdges).toBeGreaterThanOrEqual(2);
+
+    const aCPT = result.cpts.find(c => c.variable.name === 'A')!;
+    const bCPT = result.cpts.find(c => c.variable.name === 'B')!;
+    const cCPT = result.cpts.find(c => c.variable.name === 'C')!;
+
+    // A-B connected and B-C connected (in either direction)
+    const abConnected =
+      bCPT.parents.some(p => p.name === 'A') || aCPT.parents.some(p => p.name === 'B');
+    const bcConnected =
+      cCPT.parents.some(p => p.name === 'B') || bCPT.parents.some(p => p.name === 'C');
+
+    expect(abConnected).toBe(true);
+    expect(bcConnected).toBe(true);
+  });
+
+  it('GES achieves BIC at least as good as HC on same data', () => {
+    const A: Variable = { name: 'A', outcomes: ['0', '1'] };
+    const B: Variable = { name: 'B', outcomes: ['0', '1'] };
+    const C: Variable = { name: 'C', outcomes: ['0', '1'] };
+
+    const cpts: CPT[] = [
+      { variable: A, parents: [], table: new Float64Array([0.4, 0.6]) },
+      { variable: B, parents: [A], table: new Float64Array([0.85, 0.15, 0.15, 0.85]) },
+      { variable: C, parents: [B], table: new Float64Array([0.9, 0.1, 0.1, 0.9]) },
+    ];
+
+    const data = generateData([A, B, C], cpts, 3000);
+
+    const hcResult = learnStructure(data);
+    const gesResult = learnStructureGES(data);
+
+    const hcBIC = computeBIC(data, hcResult.cpts, hcResult.variables);
+    const gesBIC = computeBIC(data, gesResult.cpts, gesResult.variables);
+
+    // GES should be at least as good (higher BIC = better)
+    expect(gesBIC).toBeGreaterThanOrEqual(hcBIC - 1); // small tolerance for floating point
   });
 });
