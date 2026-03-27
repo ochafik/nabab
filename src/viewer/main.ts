@@ -1,9 +1,11 @@
 import * as d3 from 'd3';
 import dagre from '@dagrejs/dagre';
 import { BayesianNetwork } from '../lib/network.js';
+import { CachedInferenceEngine } from '../lib/cached-inference.js';
 import type { Variable, Evidence, LikelihoodEvidence, Distribution } from '../lib/types.js';
 
 let network: BayesianNetwork | null = null;
+let cachedEngine: CachedInferenceEngine | null = null;
 let hardEvidence: Evidence = new Map();
 let softEvidence: LikelihoodEvidence = new Map();
 let observationEnabled = new Set<string>();
@@ -97,6 +99,7 @@ async function loadStateFromHash(): Promise<boolean> {
       currentSource = { type: 'custom', xmlbif: state.s.x };
       network = BayesianNetwork.fromXmlBif(state.s.x);
     }
+    cachedEngine = new CachedInferenceEngine(network);
 
     // Restore evidence
     hardEvidence = new Map(Object.entries(state.h ?? {}));
@@ -147,6 +150,7 @@ async function loadExample() {
 
 function loadNetwork(xmlbif: string, isCustom = true) {
   network = BayesianNetwork.fromXmlBif(xmlbif);
+  cachedEngine = new CachedInferenceEngine(network);
   hardEvidence = new Map(); softEvidence = new Map();
   observationEnabled = new Set();
   rememberedHard = new Map(); rememberedSoft = new Map();
@@ -439,9 +443,9 @@ function clearOutcomeTweak(v: Variable, outcomeIdx: number) {
 // ─── Rendering ───────────────────────────────────────────────────────
 
 function render() {
-  if (!network) return;
+  if (!network || !cachedEngine) return;
   const [he, se] = effectiveEvidence();
-  const result = network.infer(he, se);
+  const result = cachedEngine.infer(he, se);
   renderGraph(network, result.posteriors);
   saveStateToHash();
   if (window.parent !== window) {
