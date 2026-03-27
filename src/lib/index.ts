@@ -27,4 +27,6 @@ export type { InferenceResult } from './inference.js';
 export { infer } from './inference.js';
 export type { ParsedNetwork } from './xmlbif-parser.js';
 export { parseXmlBif } from './xmlbif-parser.js';
+export { parseBif } from './bif-parser.js';
 export { BayesianNetwork } from './network.js';
+export { CachedInferenceEngine } from './cached-inference.js';

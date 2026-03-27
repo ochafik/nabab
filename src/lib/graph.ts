@@ -72,9 +72,11 @@ export function moralize(dag: DirectedGraph): UndirectedGraph {
 // ─── Triangulation ───────────────────────────────────────────────────
 
 /**
- * Triangulate an undirected graph using minimum-degree elimination ordering.
- * This produces a chordal graph with much smaller cliques than the naive
- * "connect all neighbors" approach.
+ * Triangulate an undirected graph using min-fill elimination ordering.
+ * For each candidate vertex, count how many fill edges its elimination would
+ * add (pairs of remaining neighbors not already connected). Pick the vertex
+ * with the fewest fills; break ties by minimum degree. This produces smaller
+ * cliques and lower treewidth than simple minimum-degree ordering.
  */
 export function triangulate(graph: UndirectedGraph): UndirectedGraph {
   // Work on a mutable copy of the adjacency structure
@@ -86,20 +88,37 @@ export function triangulate(graph: UndirectedGraph): UndirectedGraph {
   const remaining = new Set(graph.vertices);
 
   while (remaining.size > 0) {
-    // Pick vertex with minimum degree among remaining
-    let minDeg = Infinity;
-    let minV: Variable | null = null;
-    for (const v of remaining) {
-      let deg = 0;
-      for (const n of elimNeighbors.get(v)!) {
-        if (remaining.has(n)) deg++;
-      }
-      if (deg < minDeg) { minDeg = deg; minV = v; }
-    }
-    if (!minV) break;
+    // Pick vertex with minimum fill count; break ties by minimum degree
+    let bestFill = Infinity;
+    let bestDeg = Infinity;
+    let bestV: Variable | null = null;
 
-    // Connect all remaining neighbors of minV (fill-in)
-    const ns = [...elimNeighbors.get(minV)!].filter(n => remaining.has(n));
+    for (const v of remaining) {
+      const vNeighbors = elimNeighbors.get(v)!;
+      // Collect remaining neighbors
+      const ns: Variable[] = [];
+      for (const n of vNeighbors) {
+        if (remaining.has(n)) ns.push(n);
+      }
+      // Count fill edges that would be added
+      let fill = 0;
+      for (let i = 0; i < ns.length; i++) {
+        const niAdj = elimNeighbors.get(ns[i])!;
+        for (let j = i + 1; j < ns.length; j++) {
+          if (!niAdj.has(ns[j])) fill++;
+        }
+      }
+      const deg = ns.length;
+      if (fill < bestFill || (fill === bestFill && deg < bestDeg)) {
+        bestFill = fill;
+        bestDeg = deg;
+        bestV = v;
+      }
+    }
+    if (!bestV) break;
+
+    // Connect all remaining neighbors of bestV (fill-in)
+    const ns = [...elimNeighbors.get(bestV)!].filter(n => remaining.has(n));
     for (let i = 0; i < ns.length; i++) {
       for (let j = i + 1; j < ns.length; j++) {
         if (!elimNeighbors.get(ns[i])!.has(ns[j])) {
@@ -111,7 +130,7 @@ export function triangulate(graph: UndirectedGraph): UndirectedGraph {
     }
 
     // Eliminate vertex
-    remaining.delete(minV);
+    remaining.delete(bestV);
   }
 
   // Build result: original graph + fill-in edges
