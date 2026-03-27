@@ -4,6 +4,8 @@ import { BayesianNetwork } from '../lib/network.js';
 import { CachedInferenceEngine } from '../lib/cached-inference.js';
 import type { Variable, CPT, Evidence, LikelihoodEvidence, Distribution } from '../lib/types.js';
 import { parseCSV, learnStructure } from '../lib/structure-learning.js';
+import { toXmlBif } from '../lib/xmlbif-writer.js';
+import { toJSON } from '../lib/json-export.js';
 
 let network: BayesianNetwork | null = null;
 let cachedEngine: CachedInferenceEngine | null = null;
@@ -136,8 +138,10 @@ async function loadStateFromHash(): Promise<boolean> {
 
 function exampleUrl(filename: string): string {
   if (filename.startsWith('bench/')) {
-    // BIF benchmark models live in /bench/models/
-    return new URL(`../../bench/models/${filename.slice('bench/'.length)}`, import.meta.url).href;
+    // BIF benchmark models live in /bench/models/, CSV samples in /bench/samples/
+    const rest = filename.slice('bench/'.length);
+    if (rest.endsWith('.csv')) return `/bench/samples/${rest}`;
+    return `/bench/models/${rest}`;
   }
   return new URL(`../examples/${filename}`, import.meta.url).href;
 }
@@ -145,8 +149,29 @@ function exampleUrl(filename: string): string {
 async function loadExampleFile(filename: string) {
   const resp = await fetch(exampleUrl(filename));
   if (!resp.ok) throw new Error(`Failed to load ${filename}: ${resp.status}`);
-  currentSource = { type: 'builtin', name: filename };
-  loadNetwork(await resp.text(), false);
+  const content = await resp.text();
+  if (filename.endsWith('.csv')) {
+    // Structure learning from CSV
+    const statusEl = document.getElementById('network-name')!;
+    statusEl.textContent = 'Learning structure\u2026';
+    await new Promise(r => setTimeout(r, 0)); // let the UI update
+    const data = parseCSV(content);
+    const parsed = learnStructure(data);
+    const bn = new BayesianNetwork(parsed);
+    network = bn;
+    cachedEngine = new CachedInferenceEngine(network);
+    _priorCache = null;
+    hardEvidence = new Map(); softEvidence = new Map();
+    observationEnabled = new Set();
+    rememberedHard = new Map(); rememberedSoft = new Map();
+    nodePositions = new Map();
+    currentSource = { type: 'builtin', name: filename };
+    statusEl.textContent = network.name;
+    autoLayout();
+  } else {
+    currentSource = { type: 'builtin', name: filename };
+    loadNetwork(content, false);
+  }
 }
 
 async function loadExample() {
@@ -241,6 +266,46 @@ document.getElementById('btn-clear-evidence')!.addEventListener('click', () => {
 });
 document.getElementById('btn-layout')!.addEventListener('click', autoLayout);
 document.getElementById('btn-fit')!.addEventListener('click', fitView);
+
+// ─── Export ────────────────────────────────────────────────────────────
+const exportMenu = document.getElementById('export-menu')!;
+document.getElementById('btn-export')!.addEventListener('click', () => {
+  exportMenu.classList.toggle('visible');
+});
+// Close menu when clicking outside
+document.addEventListener('click', (e) => {
+  if (!(e.target as HTMLElement).closest('.export-wrapper')) {
+    exportMenu.classList.remove('visible');
+  }
+});
+
+function downloadFile(filename: string, content: string, mimeType: string) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById('btn-export-xmlbif')!.addEventListener('click', () => {
+  if (!network) return;
+  const content = toXmlBif(network);
+  const safeName = network.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+  downloadFile(`${safeName}.xmlbif`, content, 'application/xml');
+  exportMenu.classList.remove('visible');
+});
+
+document.getElementById('btn-export-json')!.addEventListener('click', () => {
+  if (!network) return;
+  const content = JSON.stringify(toJSON(network), null, 2);
+  const safeName = network.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+  downloadFile(`${safeName}.json`, content, 'application/json');
+  exportMenu.classList.remove('visible');
+});
 
 // Paste XMLBIF
 document.body.addEventListener('paste', (e: ClipboardEvent) => {

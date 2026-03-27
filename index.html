@@ -151,6 +151,38 @@
     #cpt-panel .cpt-separator {
       border-right: 2px solid var(--border);
     }
+
+    /* Export dropdown */
+    .export-wrapper {
+      position: relative;
+      display: inline-block;
+    }
+    .export-menu {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      margin-top: 2px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      box-shadow: 0 4px 12px var(--node-shadow);
+      z-index: 200;
+      min-width: 140px;
+    }
+    .export-menu.visible { display: block; }
+    .export-menu button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: none;
+      border: none;
+      padding: 6px 12px;
+      font-size: 12px;
+      color: var(--text);
+      cursor: pointer;
+    }
+    .export-menu button:hover { background: var(--border); }
   </style>
 </head>
 <body>
@@ -203,10 +235,21 @@
         <option value="bench/pigs.bif">Pigs (441 nodes, slow)</option>
         <option value="bench/link.bif">Link (724 nodes, slow)</option>
       </optgroup>
+      <optgroup label="CSV Datasets (learn structure)">
+        <option value="bench/weather.csv">Weather (5 vars, 200 rows)</option>
+        <option value="bench/students.csv">Students (5 vars, 300 rows)</option>
+      </optgroup>
     </select>
     <button id="btn-layout">Auto Layout</button>
     <button id="btn-fit">Fit View</button>
     <button id="btn-clear-evidence">Clear Evidence</button>
+    <span class="export-wrapper">
+      <button id="btn-export">Export</button>
+      <span class="export-menu" id="export-menu">
+        <button id="btn-export-xmlbif">Export XMLBIF</button>
+        <button id="btn-export-json">Export JSON</button>
+      </span>
+    </span>
     <span class="hint">Click name to cycle | Drag slider for soft evidence | Eye toggles | Drop .xml/.bif files to load | Drop .csv to learn structure</span>
   </div>
   <div id="graph-container"></div>

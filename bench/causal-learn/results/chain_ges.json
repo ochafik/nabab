@@ -1,0 +1,57 @@
+{
+  "algorithm": "GES",
+  "parameters": {
+    "score_func": "local_score_BIC"
+  },
+  "nodes": [
+    "A",
+    "B",
+    "C"
+  ],
+  "matrix": [
+    [
+      0,
+      1,
+      0
+    ],
+    [
+      1,
+      0,
+      1
+    ],
+    [
+      0,
+      1,
+      0
+    ]
+  ],
+  "edges": [
+    {
+      "from": "A",
+      "to": "B",
+      "type": "undirected"
+    },
+    {
+      "from": "B",
+      "to": "C",
+      "type": "undirected"
+    }
+  ],
+  "raw_matrix": [
+    [
+      0,
+      -1,
+      0
+    ],
+    [
+      -1,
+      0,
+      -1
+    ],
+    [
+      0,
+      -1,
+      0
+    ]
+  ]
+}

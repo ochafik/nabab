@@ -1,0 +1,114 @@
+{
+  "algorithm": "GES",
+  "parameters": {
+    "score_func": "local_score_BIC"
+  },
+  "nodes": [
+    "A",
+    "B",
+    "C",
+    "D",
+    "E"
+  ],
+  "matrix": [
+    [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      1,
+      0,
+      0,
+      1,
+      0
+    ],
+    [
+      1,
+      0,
+      0,
+      1,
+      1
+    ],
+    [
+      0,
+      1,
+      1,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      1,
+      0,
+      0
+    ]
+  ],
+  "edges": [
+    {
+      "from": "B",
+      "to": "A",
+      "type": "directed"
+    },
+    {
+      "from": "C",
+      "to": "A",
+      "type": "directed"
+    },
+    {
+      "from": "B",
+      "to": "D",
+      "type": "undirected"
+    },
+    {
+      "from": "C",
+      "to": "D",
+      "type": "undirected"
+    },
+    {
+      "from": "C",
+      "to": "E",
+      "type": "undirected"
+    }
+  ],
+  "raw_matrix": [
+    [
+      0,
+      1,
+      1,
+      0,
+      0
+    ],
+    [
+      -1,
+      0,
+      0,
+      -1,
+      0
+    ],
+    [
+      -1,
+      0,
+      0,
+      -1,
+      -1
+    ],
+    [
+      0,
+      -1,
+      -1,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      -1,
+      0,
+      0
+    ]
+  ]
+}
