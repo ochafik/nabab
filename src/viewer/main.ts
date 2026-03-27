@@ -3,6 +3,7 @@ import dagre from '@dagrejs/dagre';
 import { BayesianNetwork } from '../lib/network.js';
 import { CachedInferenceEngine } from '../lib/cached-inference.js';
 import type { Variable, CPT, Evidence, LikelihoodEvidence, Distribution } from '../lib/types.js';
+import { parseCSV, learnStructure } from '../lib/structure-learning.js';
 
 let network: BayesianNetwork | null = null;
 let cachedEngine: CachedInferenceEngine | null = null;
@@ -166,6 +167,24 @@ function loadNetwork(content: string, isCustom = true) {
   autoLayout();
 }
 
+/** Serialize a ParsedNetwork to minimal XMLBIF for hash persistence. */
+function parsedNetworkToXmlBif(p: { name: string; variables: readonly Variable[]; cpts: readonly CPT[] }): string {
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  let xml = `<?xml version="1.0"?>\n<BIF VERSION="0.3">\n<NETWORK>\n<NAME>${esc(p.name)}</NAME>\n`;
+  for (const v of p.variables) {
+    xml += `<VARIABLE TYPE="nature">\n  <NAME>${esc(v.name)}</NAME>\n`;
+    for (const o of v.outcomes) xml += `  <OUTCOME>${esc(o)}</OUTCOME>\n`;
+    xml += `</VARIABLE>\n`;
+  }
+  for (const cpt of p.cpts) {
+    const forAttr = [cpt.variable.name, ...cpt.parents.map(p => p.name)].map(esc).join(' ');
+    xml += `<DEFINITION>\n  <FOR>${forAttr}</FOR>\n`;
+    xml += `  <TABLE>${Array.from(cpt.table).join(' ')}</TABLE>\n</DEFINITION>\n`;
+  }
+  xml += `</NETWORK>\n</BIF>`;
+  return xml;
+}
+
 // ─── Selection ───────────────────────────────────────────────────────
 
 function selectNode(name: string, additive: boolean) {
@@ -237,7 +256,38 @@ container.addEventListener('drop', (e) => {
   const file = e.dataTransfer?.files[0];
   if (file) {
     const reader = new FileReader();
-    reader.onload = () => { if (typeof reader.result === 'string') loadNetwork(reader.result); };
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') return;
+      const content = reader.result;
+      const ext = file.name.toLowerCase();
+      const isCSV = ext.endsWith('.csv') || ext.endsWith('.tsv')
+        || (!content.trimStart().startsWith('<') && /[,\t;]/.test(content.split('\n')[0]));
+      if (isCSV) {
+        const statusEl = document.getElementById('network-name')!;
+        statusEl.textContent = 'Learning structure\u2026';
+        setTimeout(() => {
+          try {
+            const data = parseCSV(content);
+            const parsed = learnStructure(data);
+            const bn = new BayesianNetwork(parsed);
+            network = bn;
+            cachedEngine = new CachedInferenceEngine(network);
+            _priorCache = null;
+            hardEvidence = new Map(); softEvidence = new Map();
+            observationEnabled = new Set();
+            rememberedHard = new Map(); rememberedSoft = new Map();
+            nodePositions = new Map();
+            currentSource = { type: 'custom', xmlbif: parsedNetworkToXmlBif(parsed) };
+            statusEl.textContent = network.name;
+            autoLayout();
+          } catch (err) {
+            statusEl.textContent = 'Error: ' + (err instanceof Error ? err.message : String(err));
+          }
+        }, 0);
+      } else {
+        loadNetwork(content);
+      }
+    };
     reader.readAsText(file);
   }
 });
