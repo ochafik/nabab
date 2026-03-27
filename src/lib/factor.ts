@@ -16,13 +16,13 @@ import type { Variable } from './types.js';
 export interface Factor {
   readonly variables: readonly Variable[];
   readonly values: Float64Array;
-  readonly strides: readonly number[];
+  readonly strides: Int32Array;
 }
 
 /** Compute strides for a list of variables. */
-function computeStrides(variables: readonly Variable[]): number[] {
+function computeStrides(variables: readonly Variable[]): Int32Array {
   const n = variables.length;
-  const strides = new Array<number>(n);
+  const strides = new Int32Array(n);
   let stride = 1;
   for (let i = n - 1; i >= 0; i--) {
     strides[i] = stride;
