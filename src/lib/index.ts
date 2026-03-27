@@ -34,3 +34,5 @@ export { WorkerInferenceEngine, type WorkerInferenceResult } from './worker-infe
 export { variableElimination, minFillOrder } from './variable-elimination.js';
 export type { LBPOptions, LBPResult } from './loopy-bp.js';
 export { loopyBeliefPropagation } from './loopy-bp.js';
+export type { LearnOptions, DataColumn } from './structure-learning.js';
+export { learnStructure, parseCSV, computeBIC } from './structure-learning.js';
