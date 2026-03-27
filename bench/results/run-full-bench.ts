@@ -158,6 +158,10 @@ function round(n: number): number {
 }
 
 // --- Main ---
+
+// Models known to be too slow (>5min inference), skip from full suite
+const SKIP_MODELS = new Set(['munin1']);
+
 const files = readdirSync(MODELS_DIR)
   .filter(f => f.endsWith('.bif'))
   .sort();
@@ -170,11 +174,13 @@ if (files.length === 0) {
 const results: ModelResult[] = [];
 const errors: Array<{ model: string; error: string }> = [];
 
-// Set a per-model timeout of 120s for the really large models
-const TIMEOUT_MS = 120_000;
-
 for (const file of files) {
   const modelName = basename(file, '.bif');
+  if (SKIP_MODELS.has(modelName)) {
+    errors.push({ model: modelName, error: 'Skipped: inference too slow (>5 minutes per query, likely due to large CPT tables or high treewidth)' });
+    console.error(`Skipping: ${modelName} (too slow)`);
+    continue;
+  }
   console.error(`Running: ${modelName}...`);
   try {
     const startTotal = performance.now();

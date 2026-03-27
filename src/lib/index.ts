@@ -31,3 +31,4 @@ export { parseBif } from './bif-parser.js';
 export { BayesianNetwork } from './network.js';
 export { CachedInferenceEngine } from './cached-inference.js';
 export { WorkerInferenceEngine, type WorkerInferenceResult } from './worker-inference.js';
+export { variableElimination, minFillOrder } from './variable-elimination.js';

@@ -2,7 +2,7 @@ import * as d3 from 'd3';
 import dagre from '@dagrejs/dagre';
 import { BayesianNetwork } from '../lib/network.js';
 import { CachedInferenceEngine } from '../lib/cached-inference.js';
-import type { Variable, Evidence, LikelihoodEvidence, Distribution } from '../lib/types.js';
+import type { Variable, CPT, Evidence, LikelihoodEvidence, Distribution } from '../lib/types.js';
 
 let network: BayesianNetwork | null = null;
 let cachedEngine: CachedInferenceEngine | null = null;
@@ -477,6 +477,96 @@ function clearOutcomeTweak(v: Variable, outcomeIdx: number) {
   render();
 }
 
+// ─── CPT Panel ──────────────────────────────────────────────────────
+
+function renderCptPanel() {
+  const panel = document.getElementById('cpt-panel')!;
+  // Show only when exactly 1 node is selected
+  if (!network || selectedNodes.size !== 1) {
+    panel.classList.remove('visible');
+    return;
+  }
+  const varName = [...selectedNodes][0];
+  const cpt = network.cpts.find(c => c.variable.name === varName);
+  if (!cpt) {
+    panel.classList.remove('visible');
+    return;
+  }
+
+  const v = cpt.variable;
+  const parents = cpt.parents;
+  const outcomes = v.outcomes;
+
+  // Build the title: P(V) or P(V | P1, P2, ...)
+  const parentNames = parents.map(p => p.name).join(', ');
+  const title = parents.length > 0
+    ? `P(${v.name} | ${parentNames})`
+    : `P(${v.name})`;
+
+  let html = `<div class="cpt-title">${escapeHtml(title)}</div>`;
+  html += '<table>';
+
+  if (parents.length === 0) {
+    // Root node: simple single-row table
+    html += '<thead><tr>';
+    for (const o of outcomes) html += `<th>${escapeHtml(o)}</th>`;
+    html += '</tr></thead><tbody><tr>';
+    for (let i = 0; i < outcomes.length; i++) {
+      html += `<td>${formatProb(cpt.table[i])}</td>`;
+    }
+    html += '</tr></tbody>';
+  } else {
+    // Node with parents: rows = parent value combinations, cols = outcomes
+    html += '<thead><tr>';
+    for (const p of parents) html += `<th class="cpt-parent-col">${escapeHtml(p.name)}</th>`;
+    // Last parent column gets the separator
+    html += `<th></th>`; // spacer header for the separator
+    for (const o of outcomes) html += `<th>${escapeHtml(o)}</th>`;
+    html += '</tr></thead><tbody>';
+
+    // Number of parent combinations = product of parent outcome counts
+    const parentSizes = parents.map(p => p.outcomes.length);
+    const numCombinations = parentSizes.reduce((a, b) => a * b, 1);
+    const numOutcomes = outcomes.length;
+
+    for (let row = 0; row < numCombinations; row++) {
+      html += '<tr>';
+      // Decode parent combination: row-major with first parent outermost
+      let remainder = row;
+      const parentValues: string[] = [];
+      for (let pi = parents.length - 1; pi >= 0; pi--) {
+        const pSize = parentSizes[pi];
+        parentValues.unshift(parents[pi].outcomes[remainder % pSize]);
+        remainder = Math.floor(remainder / pSize);
+      }
+      for (const pv of parentValues) {
+        html += `<td class="cpt-parent-col">${escapeHtml(pv)}</td>`;
+      }
+      html += `<td class="cpt-separator"></td>`; // separator cell
+      for (let oi = 0; oi < numOutcomes; oi++) {
+        html += `<td>${formatProb(cpt.table[row * numOutcomes + oi])}</td>`;
+      }
+      html += '</tr>';
+    }
+    html += '</tbody>';
+  }
+
+  html += '</table>';
+  panel.innerHTML = html;
+  panel.classList.add('visible');
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function formatProb(p: number): string {
+  if (p === 0) return '0';
+  if (p === 1) return '1';
+  // Show up to 4 decimal places, remove trailing zeros
+  return p.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+}
+
 // ─── Rendering ───────────────────────────────────────────────────────
 
 function render() {
@@ -484,6 +574,7 @@ function render() {
   const [he, se] = effectiveEvidence();
   const result = cachedEngine.infer(he, se);
   renderGraph(network, result.posteriors);
+  renderCptPanel();
   saveStateToHash();
   if (window.parent !== window) {
     const d: Record<string, Record<string, number>> = {};
