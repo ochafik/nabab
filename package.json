@@ -37,6 +37,7 @@
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",
+    "@kanaries/causal": "^0.1.1",
     "@tensorflow/tfjs-backend-cpu": "^4.22.0",
     "@tensorflow/tfjs-core": "^4.22.0",
     "zod": "^4.3.6"
