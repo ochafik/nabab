@@ -464,6 +464,259 @@ export function learnStructure(data: DataColumn[], options?: LearnOptions): Pars
 
 /**
  * Learn a Bayesian network structure and parameters from tabular data
+ * using GRaSP (Greedy relaxation of the Sparsest Permutation).
+ *
+ * Searches over topological orderings: given a permutation, parents for each
+ * variable are chosen optimally from earlier variables. Greedy adjacent swaps
+ * improve the ordering until convergence. Multiple random restarts for robustness.
+ */
+export function learnStructureGRaSP(data: DataColumn[], options?: LearnOptions): ParsedNetwork {
+  const maxParents = options?.maxParents ?? 3;
+  const restarts = options?.restarts ?? 2;
+  const n = data[0].values.length;
+  const numVars = data.length;
+
+  const variables: Variable[] = data.map(col => ({
+    name: col.name,
+    outcomes: [...new Set(col.values)],
+  }));
+
+  const valueIndices: number[][] = data.map((col, ci) => {
+    const outcomes = variables[ci].outcomes;
+    const outcomeMap = new Map<string, number>();
+    for (let k = 0; k < outcomes.length; k++) outcomeMap.set(outcomes[k], k);
+    return col.values.map(v => outcomeMap.get(v) ?? 0);
+  });
+
+  // BIC score cache: key = "node:p1,p2,..." -> score
+  const scoreCache = new Map<string, number>();
+
+  function localBIC(nodeIdx: number, parentIndices: number[]): number {
+    const key = `${nodeIdx}:${parentIndices.join(',')}`;
+    const cached = scoreCache.get(key);
+    if (cached !== undefined) return cached;
+
+    const varCard = variables[nodeIdx].outcomes.length;
+    const parentCards = parentIndices.map(p => variables[p].outcomes.length);
+    let numParentConfigs = 1;
+    for (const c of parentCards) numParentConfigs *= c;
+
+    const countsSize = numParentConfigs * varCard;
+    const counts = new Float64Array(countsSize);
+    const parentCounts = new Float64Array(numParentConfigs);
+    for (let i = 0; i < countsSize; i++) counts[i] = 1;
+    for (let i = 0; i < numParentConfigs; i++) parentCounts[i] = varCard;
+
+    for (let row = 0; row < n; row++) {
+      let paIdx = 0;
+      let stride = 1;
+      for (let p = parentIndices.length - 1; p >= 0; p--) {
+        paIdx += valueIndices[parentIndices[p]][row] * stride;
+        stride *= parentCards[p];
+      }
+      counts[paIdx * varCard + valueIndices[nodeIdx][row]] += 1;
+      parentCounts[paIdx] += 1;
+    }
+
+    let ll = 0;
+    for (let paIdx = 0; paIdx < numParentConfigs; paIdx++) {
+      const pCount = parentCounts[paIdx];
+      if (pCount === 0) continue;
+      for (let xIdx = 0; xIdx < varCard; xIdx++) {
+        const c = counts[paIdx * varCard + xIdx];
+        if (c > 0) ll += c * Math.log(c / pCount);
+      }
+    }
+
+    const k = (varCard - 1) * numParentConfigs;
+    const score = ll - (k / 2) * Math.log(n);
+    scoreCache.set(key, score);
+    return score;
+  }
+
+  /** Find the best parent subset for nodeIdx from candidates, return [bestParents, bestScore]. */
+  function bestParentSet(nodeIdx: number, candidates: number[]): [number[], number] {
+    let bestScore = localBIC(nodeIdx, []);
+    let bestParents: number[] = [];
+    const limit = Math.min(candidates.length, maxParents);
+
+    // Enumerate all subsets of candidates up to size `limit`
+    const m = candidates.length;
+    // For efficiency, iterate subsets by size
+    for (let size = 1; size <= limit; size++) {
+      // Generate combinations of `size` from `candidates`
+      const indices = new Array(size);
+      function enumerate(start: number, depth: number) {
+        if (depth === size) {
+          const subset = indices.slice(0, size).map(i => candidates[i]);
+          const score = localBIC(nodeIdx, subset.sort((a, b) => a - b));
+          if (score > bestScore) {
+            bestScore = score;
+            bestParents = subset.sort((a, b) => a - b);
+          }
+          return;
+        }
+        for (let i = start; i < m; i++) {
+          indices[depth] = i;
+          enumerate(i + 1, depth + 1);
+        }
+      }
+      enumerate(0, 0);
+    }
+    return [bestParents, bestScore];
+  }
+
+  /** Compute total score and per-node parents for a given permutation. */
+  function evaluatePermutation(perm: number[]): { total: number; parents: number[][]; scores: number[] } {
+    const parents: number[][] = new Array(numVars);
+    const scores: number[] = new Array(numVars);
+    let total = 0;
+    for (let pos = 0; pos < numVars; pos++) {
+      const node = perm[pos];
+      const candidates = perm.slice(0, pos); // variables earlier in the ordering
+      const [bestP, bestS] = bestParentSet(node, candidates);
+      parents[node] = bestP;
+      scores[node] = bestS;
+      total += bestS;
+    }
+    return { total, parents, scores };
+  }
+
+  // Initial permutation: order by marginal entropy (highest first)
+  function marginalEntropy(varIdx: number): number {
+    const card = variables[varIdx].outcomes.length;
+    const freq = new Float64Array(card);
+    for (let row = 0; row < n; row++) freq[valueIndices[varIdx][row]] += 1;
+    let h = 0;
+    for (let k = 0; k < card; k++) {
+      const p = freq[k] / n;
+      if (p > 0) h -= p * Math.log(p);
+    }
+    return h;
+  }
+
+  let bestPerm: number[] = [];
+  let bestResult = { total: -Infinity, parents: [] as number[][], scores: [] as number[] };
+
+  // Simple seeded PRNG for reproducible restarts
+  let seed = 42;
+  function rand() {
+    seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+
+  for (let restart = -1; restart < restarts; restart++) {
+    let perm: number[];
+    if (restart === -1) {
+      // First run: order by marginal entropy descending
+      perm = variables.map((_, i) => i);
+      const entropies = perm.map(i => marginalEntropy(i));
+      perm.sort((a, b) => entropies[b] - entropies[a]);
+    } else {
+      // Random restart: Fisher-Yates shuffle
+      perm = variables.map((_, i) => i);
+      for (let i = perm.length - 1; i > 0; i--) {
+        const j = Math.floor(rand() * (i + 1));
+        [perm[i], perm[j]] = [perm[j], perm[i]];
+      }
+    }
+
+    let current = evaluatePermutation(perm);
+
+    // Greedy adjacent swaps until convergence
+    let improved = true;
+    while (improved) {
+      improved = false;
+      let bestDelta = 0;
+      let bestSwapPos = -1;
+
+      for (let pos = 0; pos < numVars - 1; pos++) {
+        // Try swapping perm[pos] and perm[pos+1]
+        [perm[pos], perm[pos + 1]] = [perm[pos + 1], perm[pos]];
+        const trial = evaluatePermutation(perm);
+        const delta = trial.total - current.total;
+        if (delta > bestDelta) {
+          bestDelta = delta;
+          bestSwapPos = pos;
+        }
+        // Swap back
+        [perm[pos], perm[pos + 1]] = [perm[pos + 1], perm[pos]];
+      }
+
+      if (bestSwapPos >= 0) {
+        [perm[bestSwapPos], perm[bestSwapPos + 1]] = [perm[bestSwapPos + 1], perm[bestSwapPos]];
+        current = evaluatePermutation(perm);
+        improved = true;
+      }
+    }
+
+    if (current.total > bestResult.total) {
+      bestResult = current;
+      bestPerm = [...perm];
+    }
+  }
+
+  // Build adjacency from best result and construct CPTs
+  const adj = Array.from({ length: numVars }, () => new Array(numVars).fill(false)) as boolean[][];
+  for (let j = 0; j < numVars; j++) {
+    for (const p of bestResult.parents[j]) adj[p][j] = true;
+  }
+
+  const cpts = buildCPTsFromAdj(adj, numVars, n, variables, valueIndices);
+  return { name: 'learned', variables, cpts };
+}
+
+/** Shared helper: build CPTs from an adjacency matrix. */
+function buildCPTsFromAdj(
+  adj: boolean[][], numVars: number, n: number,
+  variables: Variable[], valueIndices: number[][],
+): CPT[] {
+  const result: CPT[] = [];
+  for (let j = 0; j < numVars; j++) {
+    const parentIndices: number[] = [];
+    for (let i = 0; i < numVars; i++) if (adj[i][j]) parentIndices.push(i);
+
+    const variable = variables[j];
+    const parents = parentIndices.map(i => variables[i]);
+    const varCard = variable.outcomes.length;
+    const parentCards = parentIndices.map(p => variables[p].outcomes.length);
+    let numParentConfigs = 1;
+    for (const c of parentCards) numParentConfigs *= c;
+
+    const tableSize = numParentConfigs * varCard;
+    const counts = new Float64Array(tableSize);
+    const parentCounts = new Float64Array(numParentConfigs);
+    for (let i = 0; i < tableSize; i++) counts[i] = 1;
+    for (let i = 0; i < numParentConfigs; i++) parentCounts[i] = varCard;
+
+    for (let row = 0; row < n; row++) {
+      let paIdx = 0;
+      let stride = 1;
+      for (let p = parentIndices.length - 1; p >= 0; p--) {
+        paIdx += valueIndices[parentIndices[p]][row] * stride;
+        stride *= parentCards[p];
+      }
+      counts[paIdx * varCard + valueIndices[j][row]] += 1;
+      parentCounts[paIdx] += 1;
+    }
+
+    const table = new Float64Array(tableSize);
+    for (let paIdx = 0; paIdx < numParentConfigs; paIdx++) {
+      const pCount = parentCounts[paIdx];
+      for (let xIdx = 0; xIdx < varCard; xIdx++) {
+        table[paIdx * varCard + xIdx] = counts[paIdx * varCard + xIdx] / pCount;
+      }
+    }
+
+    result.push({ variable, parents, table });
+  }
+  return result;
+}
+
+/**
+ * Learn a Bayesian network structure and parameters from tabular data
  * using Greedy Equivalence Search (GES) with BIC scoring.
  *
  * GES operates in two phases:
