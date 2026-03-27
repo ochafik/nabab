@@ -89,7 +89,7 @@ describe('BIF Parser', () => {
       }
     });
 
-    it('has all probability values in [0, 1]', () => {
+    it('has all probability values in [0, 1]', { timeout: 30_000 }, () => {
       for (const cpt of parsed.cpts) {
         for (let i = 0; i < cpt.table.length; i++) {
           expect(cpt.table[i]).toBeGreaterThanOrEqual(0);

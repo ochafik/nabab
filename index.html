@@ -161,28 +161,53 @@
   <div class="toolbar">
     <button id="btn-load-example">Load Example</button>
     <select id="example-select">
-      <option value="dogproblem.xmlbif">Dog Problem</option>
-      <option value="alarm.xml">Alarm</option>
-      <option value="car-starts.xml">Car Starts</option>
-      <option value="car-starts-light.xml">Car Starts Light</option>
-      <option value="simple.xml">Simple</option>
-      <option value="simple2.xml">Simple 2</option>
-      <option value="example1.xml">Example 1</option>
-      <option value="example2.xml">Example 2</option>
-      <option value="example3.xml">Example 3</option>
-      <option value="example4.xml">Example 4</option>
-      <option value="example5.xml">Example 5</option>
-      <option value="example6.xml">Example 6</option>
-      <option value="example7.xml">Example 7</option>
-      <option value="example8.xml">Example 8</option>
-      <option value="example9.xml">Example 9</option>
-      <option value="example10.xml">Example 10</option>
-      <option value="Graph1.xml">Graph 1</option>
+      <optgroup label="XMLBIF Examples">
+        <option value="dogproblem.xmlbif">Dog Problem</option>
+        <option value="alarm.xml">Alarm</option>
+        <option value="car-starts.xml">Car Starts</option>
+        <option value="car-starts-light.xml">Car Starts Light</option>
+        <option value="simple.xml">Simple</option>
+        <option value="simple2.xml">Simple 2</option>
+        <option value="example1.xml">Example 1</option>
+        <option value="example2.xml">Example 2</option>
+        <option value="example3.xml">Example 3</option>
+        <option value="example4.xml">Example 4</option>
+        <option value="example5.xml">Example 5</option>
+        <option value="example6.xml">Example 6</option>
+        <option value="example7.xml">Example 7</option>
+        <option value="example8.xml">Example 8</option>
+        <option value="example9.xml">Example 9</option>
+        <option value="example10.xml">Example 10</option>
+        <option value="Graph1.xml">Graph 1</option>
+      </optgroup>
+      <optgroup label="BIF Benchmarks — Small (≤20 nodes)">
+        <option value="bench/asia.bif">Asia (8 nodes)</option>
+        <option value="bench/sachs.bif">Sachs (11 nodes)</option>
+        <option value="bench/child.bif">Child (20 nodes)</option>
+      </optgroup>
+      <optgroup label="BIF Benchmarks — Medium (20–50 nodes)">
+        <option value="bench/insurance.bif">Insurance (27 nodes)</option>
+        <option value="bench/water.bif">Water (32 nodes)</option>
+        <option value="bench/mildew.bif">Mildew (35 nodes)</option>
+        <option value="bench/alarm.bif">Alarm [BIF] (37 nodes)</option>
+        <option value="bench/barley.bif">Barley (48 nodes)</option>
+      </optgroup>
+      <optgroup label="BIF Benchmarks — Large (50+ nodes)">
+        <option value="bench/hailfinder.bif">Hailfinder (56 nodes)</option>
+        <option value="bench/hepar2.bif">Hepar2 (70 nodes)</option>
+        <option value="bench/win95pts.bif">Win95pts (76 nodes)</option>
+        <option value="bench/pathfinder.bif">Pathfinder (109 nodes)</option>
+        <option value="bench/munin1.bif">Munin1 (186 nodes)</option>
+        <option value="bench/andes.bif">Andes (223 nodes, slow)</option>
+        <option value="bench/diabetes.bif">Diabetes (413 nodes, slow)</option>
+        <option value="bench/pigs.bif">Pigs (441 nodes, slow)</option>
+        <option value="bench/link.bif">Link (724 nodes, slow)</option>
+      </optgroup>
     </select>
     <button id="btn-layout">Auto Layout</button>
     <button id="btn-fit">Fit View</button>
     <button id="btn-clear-evidence">Clear Evidence</button>
-    <span class="hint">Click name to cycle | Drag slider for soft evidence | Eye toggles | Drop .xml files to load</span>
+    <span class="hint">Click name to cycle | Drag slider for soft evidence | Eye toggles | Drop .xml/.bif files to load</span>
   </div>
   <div id="graph-container"></div>
   <div id="cpt-panel"></div>

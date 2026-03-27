@@ -94,10 +94,10 @@ async function loadStateFromHash(): Promise<boolean> {
       select.value = state.s.n;
       const resp = await fetch(exampleUrl(state.s.n));
       if (!resp.ok) return false;
-      network = BayesianNetwork.fromXmlBif(await resp.text());
+      network = BayesianNetwork.parse(await resp.text());
     } else {
       currentSource = { type: 'custom', xmlbif: state.s.x };
-      network = BayesianNetwork.fromXmlBif(state.s.x);
+      network = BayesianNetwork.parse(state.s.x);
     }
     cachedEngine = new CachedInferenceEngine(network);
   _priorCache = null; // reset Jeffrey's rule prior cache
@@ -134,6 +134,10 @@ async function loadStateFromHash(): Promise<boolean> {
 // ─── Loading ─────────────────────────────────────────────────────────
 
 function exampleUrl(filename: string): string {
+  if (filename.startsWith('bench/')) {
+    // BIF benchmark models live in /bench/models/
+    return new URL(`../../bench/models/${filename.slice('bench/'.length)}`, import.meta.url).href;
+  }
   return new URL(`../examples/${filename}`, import.meta.url).href;
 }
 
@@ -149,15 +153,15 @@ async function loadExample() {
   await loadExampleFile(select.value);
 }
 
-function loadNetwork(xmlbif: string, isCustom = true) {
-  network = BayesianNetwork.fromXmlBif(xmlbif);
+function loadNetwork(content: string, isCustom = true) {
+  network = BayesianNetwork.parse(content);
   cachedEngine = new CachedInferenceEngine(network);
   _priorCache = null; // reset Jeffrey's rule prior cache
   hardEvidence = new Map(); softEvidence = new Map();
   observationEnabled = new Set();
   rememberedHard = new Map(); rememberedSoft = new Map();
   nodePositions = new Map();
-  if (isCustom) currentSource = { type: 'custom', xmlbif };
+  if (isCustom) currentSource = { type: 'custom', xmlbif: content };
   document.getElementById('network-name')!.textContent = network.name;
   autoLayout();
 }
@@ -222,7 +226,7 @@ document.getElementById('btn-fit')!.addEventListener('click', fitView);
 // Paste XMLBIF
 document.body.addEventListener('paste', (e: ClipboardEvent) => {
   const t = e.clipboardData?.getData('text');
-  if (t?.includes('<BIF')) { e.preventDefault(); loadNetwork(t); }
+  if (t && (t.includes('<BIF') || t.trimStart().startsWith('network'))) { e.preventDefault(); loadNetwork(t); }
 });
 
 // Drag-and-drop XMLBIF files

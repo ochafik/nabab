@@ -4,6 +4,7 @@
 import type { Variable, CPT, Evidence, LikelihoodEvidence, Distribution } from './types.js';
 import { infer, type InferenceResult } from './inference.js';
 import { parseXmlBif, type ParsedNetwork } from './xmlbif-parser.js';
+import { parseBif } from './bif-parser.js';
 
 export class BayesianNetwork {
   readonly name: string;
@@ -21,6 +22,23 @@ export class BayesianNetwork {
   /** Parse a network from XMLBIF content. */
   static fromXmlBif(content: string, domParser?: { parseFromString(s: string, t: string): Document }): BayesianNetwork {
     return new BayesianNetwork(parseXmlBif(content, domParser));
+  }
+
+  /** Parse a network from BIF (Bayesian Interchange Format) content. */
+  static fromBif(content: string): BayesianNetwork {
+    return new BayesianNetwork(parseBif(content));
+  }
+
+  /**
+   * Auto-detect format and parse.
+   * BIF files start with "network" keyword; XMLBIF files contain "<BIF" or "<?xml".
+   */
+  static parse(content: string, domParser?: { parseFromString(s: string, t: string): Document }): BayesianNetwork {
+    const trimmed = content.trimStart();
+    if (trimmed.startsWith('network') || trimmed.startsWith('//') || trimmed.startsWith('/*')) {
+      return BayesianNetwork.fromBif(content);
+    }
+    return BayesianNetwork.fromXmlBif(content, domParser);
   }
 
   /** Get a variable by name. */
