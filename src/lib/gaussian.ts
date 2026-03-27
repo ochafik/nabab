@@ -1,14 +1,6 @@
-/**
- * Continuous (Gaussian) variable support for Bayesian networks.
- *
- * Provides discretization of continuous variables, Conditional Linear Gaussian
- * (CLG) parameter learning via OLS, and inference by discretizing then
- * delegating to the existing discrete engine.
- */
+/** Continuous (Gaussian) variable support for Bayesian networks. */
 import type { Evidence } from './types.js';
 import { BayesianNetwork } from './network.js';
-
-// ─── Types ───────────────────────────────────────────────────────────
 
 /** A Gaussian distribution parameterized by mean and variance. */
 export interface GaussianDistribution {
@@ -103,12 +95,7 @@ function fmtNum(n: number): string {
 
 // ─── CLG Parameter Learning (OLS) ───────────────────────────────────
 
-/**
- * Learn CLG parameters from data using ordinary least squares.
- *
- * Groups data by discrete parent configuration, then within each group
- * fits y = b0 + b1*x1 + b2*x2 + ... using the normal equations.
- */
+/** Learn CLG parameters from data using OLS, grouped by discrete parent config. */
 export function learnCLGParameters(
   data: Array<Record<string, number | string>>,
   variable: string,
@@ -150,11 +137,8 @@ export function learnCLGParameters(
       y.push(Number(row[variable]));
     }
 
-    // Normal equations: beta = (X'X)^-1 X'y
     const cols = p + 1;
-    const XtX = matMul(transpose(X, n, cols), X, cols, n, cols);
-    const Xty = matVecMul(transpose(X, n, cols), y, cols, n);
-    const beta = solveLinear(XtX, Xty, cols);
+    const beta = olsSolve(X, y, n, cols);
 
     // Compute residual variance
     let ssRes = 0;
@@ -175,77 +159,44 @@ export function learnCLGParameters(
   return { variable, type: 'continuous', discreteParents, continuousParents, parameters };
 }
 
-// ─── Linear Algebra Helpers ─────────────────────────────────────────
+// ─── Linear Algebra Helpers (OLS via normal equations) ───────────────
 
-function transpose(A: number[][], rows: number, cols: number): number[][] {
-  const T: number[][] = [];
-  for (let j = 0; j < cols; j++) {
-    const row: number[] = [];
-    for (let i = 0; i < rows; i++) row.push(A[i][j]);
-    T.push(row);
-  }
-  return T;
-}
-
-function matMul(A: number[][], B: number[][], aRows: number, aCols: number, bCols: number): number[][] {
-  const C: number[][] = [];
-  for (let i = 0; i < aRows; i++) {
-    const row: number[] = new Array(bCols).fill(0);
-    for (let k = 0; k < aCols; k++) {
-      const aik = A[i][k];
-      for (let j = 0; j < bCols; j++) row[j] += aik * B[k][j];
+/** Solve (X'X) beta = X'y via Gaussian elimination with partial pivoting. */
+function olsSolve(X: number[][], y: number[], n: number, p: number): number[] {
+  // Compute X'X (p x p) and X'y (p x 1) in one pass
+  const XtX: number[][] = Array.from({ length: p }, () => new Array(p).fill(0));
+  const Xty: number[] = new Array(p).fill(0);
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < p; j++) {
+      Xty[j] += X[i][j] * y[i];
+      for (let k = j; k < p; k++) XtX[j][k] += X[i][j] * X[i][k];
     }
-    C.push(row);
   }
-  return C;
-}
+  // Symmetrize
+  for (let j = 0; j < p; j++)
+    for (let k = 0; k < j; k++) XtX[j][k] = XtX[k][j];
 
-function matVecMul(A: number[][], v: number[], aRows: number, aCols: number): number[] {
-  const result: number[] = [];
-  for (let i = 0; i < aRows; i++) {
-    let s = 0;
-    for (let j = 0; j < aCols; j++) s += A[i][j] * v[j];
-    result.push(s);
-  }
-  return result;
-}
-
-/** Solve Ax = b via Gaussian elimination with partial pivoting. */
-function solveLinear(A: number[][], b: number[], n: number): number[] {
-  // Augmented matrix
-  const M = A.map((row, i) => [...row, b[i]]);
-
-  for (let col = 0; col < n; col++) {
-    // Partial pivoting
-    let maxVal = Math.abs(M[col][col]);
-    let maxRow = col;
-    for (let row = col + 1; row < n; row++) {
-      if (Math.abs(M[row][col]) > maxVal) {
-        maxVal = Math.abs(M[row][col]);
-        maxRow = row;
-      }
+  // Gaussian elimination with partial pivoting on augmented [XtX | Xty]
+  const M = XtX.map((row, i) => [...row, Xty[i]]);
+  for (let col = 0; col < p; col++) {
+    let maxVal = Math.abs(M[col][col]), maxRow = col;
+    for (let row = col + 1; row < p; row++) {
+      if (Math.abs(M[row][col]) > maxVal) { maxVal = Math.abs(M[row][col]); maxRow = row; }
     }
     [M[col], M[maxRow]] = [M[maxRow], M[col]];
-
     const pivot = M[col][col];
-    if (Math.abs(pivot) < 1e-12) {
-      // Singular – fill with zeros
-      continue;
-    }
-
-    // Eliminate below
-    for (let row = col + 1; row < n; row++) {
-      const factor = M[row][col] / pivot;
-      for (let j = col; j <= n; j++) M[row][j] -= factor * M[col][j];
+    if (Math.abs(pivot) < 1e-12) continue;
+    for (let row = col + 1; row < p; row++) {
+      const f = M[row][col] / pivot;
+      for (let j = col; j <= p; j++) M[row][j] -= f * M[col][j];
     }
   }
-
   // Back substitution
-  const x = new Array(n).fill(0);
-  for (let i = n - 1; i >= 0; i--) {
+  const x = new Array(p).fill(0);
+  for (let i = p - 1; i >= 0; i--) {
     if (Math.abs(M[i][i]) < 1e-12) continue;
-    let s = M[i][n];
-    for (let j = i + 1; j < n; j++) s -= M[i][j] * x[j];
+    let s = M[i][p];
+    for (let j = i + 1; j < p; j++) s -= M[i][j] * x[j];
     x[i] = s / M[i][i];
   }
   return x;
@@ -254,12 +205,8 @@ function solveLinear(A: number[][], b: number[], n: number): number[] {
 // ─── Inference (discretize-and-delegate) ─────────────────────────────
 
 /**
- * Infer the approximate posterior distribution of a continuous variable
- * by discretizing it and all continuous evidence, then running standard
- * discrete inference.
- *
- * Returns a GaussianDistribution by computing the mean and variance of
- * the resulting discrete posterior (using bin midpoints).
+ * Infer the posterior of a continuous variable given discrete and continuous
+ * evidence, using CLG parameters (mean = linear function of continuous parents).
  */
 export function inferContinuous(
   network: BayesianNetwork,
