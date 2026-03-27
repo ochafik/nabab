@@ -100,6 +100,7 @@ async function loadStateFromHash(): Promise<boolean> {
       network = BayesianNetwork.fromXmlBif(state.s.x);
     }
     cachedEngine = new CachedInferenceEngine(network);
+  _priorCache = null; // reset Jeffrey's rule prior cache
 
     // Restore evidence
     hardEvidence = new Map(Object.entries(state.h ?? {}));
@@ -151,6 +152,7 @@ async function loadExample() {
 function loadNetwork(xmlbif: string, isCustom = true) {
   network = BayesianNetwork.fromXmlBif(xmlbif);
   cachedEngine = new CachedInferenceEngine(network);
+  _priorCache = null; // reset Jeffrey's rule prior cache
   hardEvidence = new Map(); softEvidence = new Map();
   observationEnabled = new Set();
   rememberedHard = new Map(); rememberedSoft = new Map();
@@ -268,10 +270,45 @@ function autoLayout() {
 
 // ─── Evidence ────────────────────────────────────────────────────────
 
+/**
+ * Convert user-set target marginals to likelihood evidence via Jeffrey's rule.
+ * User sets "I want P(X=ok)=0.19" but the engine needs likelihood weights.
+ * Jeffrey's rule: likelihood(x) = target(x) / prior(x).
+ * We compute priors once (no evidence), then divide.
+ */
+let _priorCache: Map<Variable, Distribution> | null = null;
+
 function effectiveEvidence(): [Evidence | undefined, LikelihoodEvidence | undefined] {
-  const he = new Map<string, string>(), se = new Map<string, Map<string, number>>();
+  if (!network) return [undefined, undefined];
+  const he = new Map<string, string>();
+  const se = new Map<string, Map<string, number>>();
+
   for (const [k, v] of hardEvidence) if (observationEnabled.has(k)) he.set(k, v);
-  for (const [k, v] of softEvidence) if (observationEnabled.has(k)) se.set(k, v);
+
+  // For soft evidence, apply Jeffrey's rule: L(x) = target(x) / prior(x)
+  if (softEvidence.size > 0) {
+    // Compute priors once (cached until network changes)
+    if (!_priorCache) {
+      const priorResult = network.infer();
+      _priorCache = priorResult.posteriors;
+    }
+    for (const [k, targetWeights] of softEvidence) {
+      if (!observationEnabled.has(k)) continue;
+      const variable = network.getVariable(k);
+      if (!variable) continue;
+      const prior = _priorCache.get(variable);
+      if (!prior) { se.set(k, targetWeights); continue; }
+
+      // Jeffrey's rule: likelihood = target / prior
+      const likelihood = new Map<string, number>();
+      for (const [outcome, targetP] of targetWeights) {
+        const priorP = prior.get(outcome) ?? 0;
+        likelihood.set(outcome, priorP > 1e-10 ? targetP / priorP : targetP > 0 ? 1e6 : 0);
+      }
+      se.set(k, likelihood);
+    }
+  }
+
   return [he.size ? he : undefined, se.size ? se : undefined];
 }
 
