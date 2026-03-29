@@ -46,6 +46,7 @@ interface SerializedState {
   o?: string[];                                        // enabled observations
   z?: { x: number; y: number; k: number };             // zoom transform (translateX, translateY, scale)
   p?: Record<string, { x: number; y: number }>;        // node positions (if manually moved)
+  sel?: string[];                                       // selected nodes
 }
 
 async function compress(data: string): Promise<string> {
@@ -90,6 +91,7 @@ function saveStateToHash() {
       state.p = {};
       for (const [k, v] of nodePositions) state.p[k] = { x: Math.round(v.x), y: Math.round(v.y) };
     }
+    if (selectedNodes.size > 0) state.sel = [...selectedNodes];
     try {
       const encoded = await compress(JSON.stringify(state));
       history.replaceState(null, '', '#' + encoded);
@@ -124,6 +126,7 @@ async function loadStateFromHash(): Promise<boolean> {
     softEvidence = new Map(Object.entries(state.e ?? {}).map(([k, v]) => [k, new Map(Object.entries(v))]));
     observationEnabled = new Set(state.o ?? []);
     rememberedHard = new Map(); rememberedSoft = new Map(); tweakedOutcomes = new Map();
+    selectedNodes = new Set(state.sel ?? []);
 
     // Restore node positions (or auto-layout if none saved)
     if (state.p) {
@@ -171,6 +174,7 @@ function buildSerializedState(): SerializedState {
     state.p = {};
     for (const [k, v] of nodePositions) state.p[k] = { x: Math.round(v.x), y: Math.round(v.y) };
   }
+  if (selectedNodes.size > 0) state.sel = [...selectedNodes];
   return state;
 }
 
@@ -201,6 +205,7 @@ function restoreSerializedState(state: SerializedState): boolean {
     softEvidence = new Map(Object.entries(state.e ?? {}).map(([k, v]) => [k, new Map(Object.entries(v))]));
     observationEnabled = new Set(state.o ?? []);
     rememberedHard = new Map(); rememberedSoft = new Map(); tweakedOutcomes = new Map();
+    selectedNodes = new Set(state.sel ?? []);
     nodePositions = state.p ? new Map(Object.entries(state.p)) : new Map();
     document.getElementById('network-name')!.textContent = network.name;
     if (nodePositions.size === 0) autoLayout(); else render();
@@ -683,81 +688,51 @@ function clearOutcomeTweak(v: Variable, outcomeIdx: number) {
 
 // ─── CPT Panel ──────────────────────────────────────────────────────
 
-function renderCptPanel() {
-  const panel = document.getElementById('cpt-panel')!;
-  // Show only when exactly 1 node is selected
-  if (!network || selectedNodes.size !== 1) {
-    panel.classList.remove('visible');
-    return;
-  }
-  const varName = [...selectedNodes][0];
+/** Build CPT HTML for a single variable. */
+function buildCptHtml(varName: string): string {
+  if (!network) return '';
   const cpt = network.cpts.find(c => c.variable.name === varName);
-  if (!cpt) {
-    panel.classList.remove('visible');
-    return;
-  }
+  if (!cpt) return '';
 
   const v = cpt.variable;
   const parents = cpt.parents;
   const outcomes = v.outcomes;
-
-  // Build the title: P(V) or P(V | P1, P2, ...)
   const parentNames = parents.map(p => p.name).join(', ');
-  const title = parents.length > 0
-    ? `P(${v.name} | ${parentNames})`
-    : `P(${v.name})`;
+  const title = parents.length > 0 ? `P(${v.name} | ${parentNames})` : `P(${v.name})`;
 
-  let html = `<div class="cpt-title">${escapeHtml(title)}</div>`;
-  html += '<table>';
+  let html = `<div class="cpt-title">${escapeHtml(title)}</div><table class="cpt-table">`;
 
   if (parents.length === 0) {
-    // Root node: simple single-row table
     html += '<thead><tr>';
     for (const o of outcomes) html += `<th>${escapeHtml(o)}</th>`;
     html += '</tr></thead><tbody><tr>';
-    for (let i = 0; i < outcomes.length; i++) {
-      html += `<td>${formatProb(cpt.table[i])}</td>`;
-    }
+    for (let i = 0; i < outcomes.length; i++) html += `<td>${formatProb(cpt.table[i])}</td>`;
     html += '</tr></tbody>';
   } else {
-    // Node with parents: rows = parent value combinations, cols = outcomes
     html += '<thead><tr>';
     for (const p of parents) html += `<th class="cpt-parent-col">${escapeHtml(p.name)}</th>`;
-    // Last parent column gets the separator
-    html += `<th></th>`; // spacer header for the separator
+    html += `<th></th>`;
     for (const o of outcomes) html += `<th>${escapeHtml(o)}</th>`;
     html += '</tr></thead><tbody>';
-
-    // Number of parent combinations = product of parent outcome counts
     const parentSizes = parents.map(p => p.outcomes.length);
     const numCombinations = parentSizes.reduce((a, b) => a * b, 1);
     const numOutcomes = outcomes.length;
-
     for (let row = 0; row < numCombinations; row++) {
       html += '<tr>';
-      // Decode parent combination: row-major with first parent outermost
       let remainder = row;
-      const parentValues: string[] = [];
       for (let pi = parents.length - 1; pi >= 0; pi--) {
         const pSize = parentSizes[pi];
-        parentValues.unshift(parents[pi].outcomes[remainder % pSize]);
+        html += `<td class="cpt-parent-col">${escapeHtml(parents[pi].outcomes[remainder % pSize])}</td>`;
         remainder = Math.floor(remainder / pSize);
       }
-      for (const pv of parentValues) {
-        html += `<td class="cpt-parent-col">${escapeHtml(pv)}</td>`;
-      }
-      html += `<td class="cpt-separator"></td>`; // separator cell
-      for (let oi = 0; oi < numOutcomes; oi++) {
-        html += `<td>${formatProb(cpt.table[row * numOutcomes + oi])}</td>`;
-      }
+      html += `<td class="cpt-separator"></td>`;
+      for (let oi = 0; oi < numOutcomes; oi++) html += `<td>${formatProb(cpt.table[row * numOutcomes + oi])}</td>`;
       html += '</tr>';
     }
     html += '</tbody>';
   }
-
   html += '</table>';
-  panel.innerHTML = html;
-  panel.classList.add('visible');
+  return html;
 }
 
 function escapeHtml(s: string): string {
@@ -807,8 +782,7 @@ function render() {
   }
 
   renderGraph(network, result.posteriors);
-  renderCptPanel();
-  renderSensitivityPanel();
+  renderInfoPanel();
 
   if (IS_MCP) {
     saveStateToLocalStorage();
@@ -1477,93 +1451,94 @@ function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Va
 
 // ─── Sensitivity panel rendering ────────────────────────────────────
 
-function renderSensitivityPanel() {
-  const panel = document.getElementById('sensitivity-panel');
+let activeInfoTab = 'voi';
+
+function renderInfoPanel() {
+  const panel = document.getElementById('info-panel');
   if (!panel) return;
 
-  const hasVoi = voiResults && voiResults.length > 0;
-  const hasTornado = sensitivityMode && sensitivityResults && sensitivityResults.length > 0;
-
-  if (!hasVoi && !hasTornado) {
+  if (!network || selectedNodes.size === 0) {
     panel.classList.remove('visible');
     return;
   }
-  panel.classList.add('visible');
 
-  // Show/hide tornado tab based on sensitivity mode
-  const tornadoTab = panel.querySelector<HTMLElement>('[data-tab="tornado"]');
-  if (tornadoTab) tornadoTab.style.display = hasTornado ? '' : 'none';
+  const selected = [...selectedNodes];
+  const hasVoi = voiResults && voiResults.length > 0;
+  const hasTornado = sensitivityMode && sensitivityResults && sensitivityResults.length > 0;
 
-  // VOI tab
-  const voiEl = document.getElementById('voi-content')!;
-  if (hasVoi) {
-    const queryLabel = selectedNodes.size > 1
-      ? [...selectedNodes].join(', ')
-      : [...selectedNodes][0] ?? '';
-    const maxVoi = voiResults![0].voi || 0.01;
-    let html = `<div class="panel-title">Observe next for ${queryLabel}</div>`;
-    for (const r of voiResults!.slice(0, 12)) {
-      const pct = Math.min(100, (r.voi / maxVoi) * 100);
-      html += `<div class="voi-row" data-var="${r.variable}" title="VOI: ${r.voi.toFixed(4)} bits&#10;Base entropy: ${r.baseEntropy.toFixed(4)} bits">`;
-      html += `<span class="voi-name">${r.variable}</span>`;
-      html += `<span class="voi-bar"><span class="voi-bar-fill" style="width:${pct}%;background:var(--accent)"></span></span>`;
-      html += `<span class="voi-value">${r.voi.toFixed(3)}</span>`;
-      html += `</div>`;
-    }
-    if (voiResults.length === 0) html += '<div style="color:var(--text-dim);padding:8px 0">No unobserved variables</div>';
-    voiEl.innerHTML = html;
-    // Click to highlight variable
-    for (const row of voiEl.querySelectorAll<HTMLElement>('.voi-row')) {
-      row.addEventListener('click', () => {
-        const name = row.dataset.var!;
-        selectedNodes.clear();
-        selectedNodes.add(name);
-        render();
-      });
-    }
-  } else {
-    voiEl.innerHTML = '<div style="color:var(--text-dim);padding:8px 0">Select a query node to see VOI</div>';
+  // Build tabs: VOI + CPT per selected node + (optional) Parameters
+  const tabs: Array<{ id: string; label: string }> = [];
+  if (hasVoi) tabs.push({ id: 'voi', label: 'Value of Info' });
+  for (const name of selected) tabs.push({ id: `cpt:${name}`, label: `P(${name})` });
+  if (hasTornado) tabs.push({ id: 'params', label: 'Parameters' });
+
+  if (tabs.length === 0) { panel.classList.remove('visible'); return; }
+
+  // Ensure active tab is valid
+  if (!tabs.find(t => t.id === activeInfoTab)) activeInfoTab = tabs[0].id;
+
+  // Render tabs
+  const tabsEl = document.getElementById('info-tabs')!;
+  tabsEl.innerHTML = tabs.map(t =>
+    `<button class="panel-tab${t.id === activeInfoTab ? ' active' : ''}" data-tab="${t.id}">${escapeHtml(t.label)}</button>`
+  ).join('');
+
+  // Tab click handlers
+  for (const btn of tabsEl.querySelectorAll<HTMLElement>('.panel-tab')) {
+    btn.addEventListener('click', () => {
+      activeInfoTab = btn.dataset.tab!;
+      renderInfoPanel(); // re-render with new active tab
+    });
   }
 
-  // Tornado / top parameters tab
-  const tornadoEl = document.getElementById('tornado-content')!;
-  if (sensitivityResults && sensitivityResults.length > 0) {
-    const top = [...sensitivityResults].sort((a, b) => Math.abs(b.derivative) - Math.abs(a.derivative)).slice(0, 12);
+  // Render active tab content
+  const bodyEl = document.getElementById('info-body')!;
+  let html = '<div class="panel-content">';
+
+  if (activeInfoTab === 'voi' && hasVoi) {
+    const queryLabel = selected.length > 1 ? selected.join(', ') : selected[0];
+    const maxVoi = voiResults![0].voi || 0.01;
+    html += `<div class="panel-title">Observe next for ${escapeHtml(queryLabel)}</div>`;
+    for (const r of voiResults!.slice(0, 15)) {
+      const pct = Math.min(100, (r.voi / maxVoi) * 100);
+      html += `<div class="voi-row" data-var="${r.variable}" title="VOI: ${r.voi.toFixed(4)} bits\nBase entropy: ${r.baseEntropy.toFixed(4)} bits">`;
+      html += `<span class="voi-name">${r.variable}</span>`;
+      html += `<span class="voi-bar"><span class="voi-bar-fill" style="width:${pct}%;background:var(--accent)"></span></span>`;
+      html += `<span class="voi-value">${r.voi.toFixed(3)}</span></div>`;
+    }
+    if (voiResults!.length === 0) html += '<div style="color:var(--text-dim);padding:8px 0">All variables observed</div>';
+  } else if (activeInfoTab.startsWith('cpt:')) {
+    const varName = activeInfoTab.slice(4);
+    html += buildCptHtml(varName);
+  } else if (activeInfoTab === 'params' && hasTornado) {
+    const top = [...sensitivityResults!].sort((a, b) => Math.abs(b.derivative) - Math.abs(a.derivative)).slice(0, 15);
     const maxDeriv = Math.abs(top[0]?.derivative) || 0.01;
-    let html = `<div class="panel-title">Top parameters for "${sensitivityQuery}"</div>`;
+    html += `<div class="panel-title">Top parameters for ${escapeHtml(sensitivityQuery ?? '')}</div>`;
     for (const r of top) {
       const pct = Math.min(100, (Math.abs(r.derivative) / maxDeriv) * 100);
       const sign = r.derivative >= 0 ? '+' : '';
-      html += `<div class="tornado-row" data-var="${r.variable}" title="${r.variable} | ${r.parentConfig}&#10;${r.outcome}: ${r.currentValue.toFixed(3)}&#10;Derivative: ${sign}${r.derivative.toFixed(4)}&#10;Range: ${r.range.toFixed(4)}">`;
+      html += `<div class="tornado-row" data-var="${r.variable}" title="${r.variable} | ${r.parentConfig}\n${r.outcome}: ${r.currentValue.toFixed(3)}\nDerivative: ${sign}${r.derivative.toFixed(4)}">`;
       html += `<span class="tornado-param">${r.variable}.${r.outcome}</span>`;
       html += `<span class="tornado-range"><span class="tornado-range-fill" style="width:${pct}%;background:${r.derivative >= 0 ? 'var(--accent)' : 'var(--accent-hard)'}"></span></span>`;
-      html += `<span class="voi-value">${sign}${r.derivative.toFixed(2)}</span>`;
-      html += `</div>`;
+      html += `<span class="voi-value">${sign}${r.derivative.toFixed(2)}</span></div>`;
     }
-    tornadoEl.innerHTML = html;
-    for (const row of tornadoEl.querySelectorAll<HTMLElement>('.tornado-row')) {
-      row.addEventListener('click', () => {
-        const name = row.dataset.var!;
-        selectedNodes.clear();
-        selectedNodes.add(name);
-        render();
-      });
-    }
-  } else {
-    tornadoEl.innerHTML = '<div style="color:var(--text-dim);padding:8px 0">Select a query node</div>';
   }
-}
 
-// Tab switching
-document.querySelectorAll<HTMLElement>('.panel-tab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
-    tab.classList.add('active');
-    const target = tab.dataset.tab!;
-    document.getElementById('voi-content')!.style.display = target === 'voi' ? '' : 'none';
-    document.getElementById('tornado-content')!.style.display = target === 'tornado' ? '' : 'none';
-  });
-});
+  html += '</div>';
+  bodyEl.innerHTML = html;
+
+  // Click handlers on VOI/tornado rows
+  for (const row of bodyEl.querySelectorAll<HTMLElement>('.voi-row, .tornado-row')) {
+    row.addEventListener('click', () => {
+      const name = row.dataset.var!;
+      selectedNodes.clear();
+      selectedNodes.add(name);
+      render();
+    });
+  }
+
+  panel.classList.add('visible');
+}
 
 // Sensitivity mode toggle
 document.getElementById('btn-sensitivity')?.addEventListener('click', () => {

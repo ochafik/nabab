@@ -100,58 +100,59 @@
     }
     #graph-container svg { width: 100%; height: 100%; }
 
-    /* CPT Panel */
-    #cpt-panel {
+    /* Unified info panel */
+    #info-panel {
       display: none;
       position: fixed;
       bottom: 16px;
       right: 16px;
-      max-width: 520px;
-      max-height: 40vh;
-      overflow: auto;
+      width: 380px;
+      max-height: 50vh;
       background: var(--bg-surface);
       border: 1px solid var(--border);
       border-radius: 8px;
-      padding: 12px 16px;
       font-size: 12px;
       color: var(--text);
       box-shadow: 0 4px 16px var(--node-shadow);
       z-index: 100;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
     }
-    #cpt-panel.visible { display: block; }
-    #cpt-panel .cpt-title {
-      font-weight: 700;
-      font-size: 13px;
-      margin-bottom: 8px;
-      color: var(--accent);
-    }
-    #cpt-panel table {
-      border-collapse: collapse;
-      width: 100%;
-    }
-    #cpt-panel th, #cpt-panel td {
-      padding: 3px 8px;
-      text-align: right;
-      white-space: nowrap;
-    }
-    #cpt-panel th {
-      font-weight: 600;
-      border-bottom: 2px solid var(--border);
-      color: var(--text);
-      background: var(--header-bg);
-    }
-    #cpt-panel td {
+    #info-panel.visible { display: flex; }
+    .panel-tabs {
+      display: flex;
       border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      overflow-x: auto;
+    }
+    .panel-tab {
+      padding: 7px 12px;
+      background: none;
+      border: none;
+      font-size: 11px;
+      font-weight: 600;
       color: var(--text-secondary);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      white-space: nowrap;
+      flex-shrink: 0;
     }
-    #cpt-panel .cpt-parent-col {
-      text-align: left;
-      color: var(--text);
-      font-weight: 500;
+    .panel-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .panel-tab:hover { background: var(--bg-bar); }
+    .panel-content { padding: 8px 12px; overflow: auto; flex: 1; min-height: 0; }
+    .panel-content .panel-title {
+      font-weight: 700; font-size: 13px; margin-bottom: 6px; color: var(--accent);
     }
-    #cpt-panel .cpt-separator {
-      border-right: 2px solid var(--border);
-    }
+    .info-panel-body { overflow: auto; flex: 1; min-height: 0; }
+    /* CPT table styles */
+    .cpt-title { font-weight: 700; font-size: 13px; margin-bottom: 8px; color: var(--accent); }
+    .cpt-table { border-collapse: collapse; width: 100%; }
+    .cpt-table th, .cpt-table td { padding: 3px 8px; text-align: right; white-space: nowrap; }
+    .cpt-table th { font-weight: 600; border-bottom: 2px solid var(--border); color: var(--text); background: var(--header-bg); }
+    .cpt-table td { border-bottom: 1px solid var(--border); color: var(--text-secondary); }
+    .cpt-parent-col { text-align: left; color: var(--text); font-weight: 500; }
+    .cpt-separator { border-right: 2px solid var(--border); }
 
     /* Export dropdown */
     .export-wrapper {
@@ -185,46 +186,6 @@
     }
     .export-menu button:hover { background: var(--border); }
 
-    /* Sensitivity panel */
-    #sensitivity-panel {
-      display: none;
-      position: fixed;
-      bottom: 16px;
-      left: 16px;
-      width: 320px;
-      max-height: 50vh;
-      overflow: auto;
-      background: var(--bg-surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 0;
-      font-size: 12px;
-      color: var(--text);
-      box-shadow: 0 4px 16px var(--node-shadow);
-      z-index: 100;
-    }
-    #sensitivity-panel.visible { display: block; }
-    .panel-tabs {
-      display: flex;
-      border-bottom: 1px solid var(--border);
-    }
-    .panel-tab {
-      flex: 1;
-      padding: 8px;
-      background: none;
-      border: none;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text-secondary);
-      cursor: pointer;
-      border-bottom: 2px solid transparent;
-    }
-    .panel-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
-    .panel-tab:hover { background: var(--bg-bar); }
-    .panel-content { padding: 8px 12px; }
-    .panel-content .panel-title {
-      font-weight: 700; font-size: 13px; margin-bottom: 6px; color: var(--accent);
-    }
     .voi-row, .tornado-row {
       display: flex;
       align-items: center;
@@ -313,14 +274,9 @@
     <span class="hint">Click name to cycle | Drag slider for soft evidence | Eye toggles | Drop .xml/.bif files to load | Drop .csv to learn structure</span>
   </div>
   <div id="graph-container"></div>
-  <div id="cpt-panel"></div>
-  <div id="sensitivity-panel">
-    <div class="panel-tabs">
-      <button class="panel-tab active" data-tab="voi">Value of Info</button>
-      <button class="panel-tab" data-tab="tornado">Top Parameters</button>
-    </div>
-    <div class="panel-content" id="voi-content"></div>
-    <div class="panel-content" id="tornado-content" style="display:none"></div>
+  <div id="info-panel">
+    <div class="panel-tabs" id="info-tabs"></div>
+    <div class="info-panel-body" id="info-body"></div>
   </div>
   <script type="module" src="/src/viewer/main.ts"></script>
 </body>
