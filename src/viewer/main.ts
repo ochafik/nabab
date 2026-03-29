@@ -772,11 +772,11 @@ function render() {
   // VOI: compute whenever any node is selected (no sensitivity mode needed)
   // Query targets = selected nodes (makes sense for both observed and unobserved:
   // "what else could I observe to learn more about these variables?")
-  if (selectedNodes.size > 0) {
+  if (selectedNodes.size > 0 && cachedEngine) {
     try {
-      const ev = he.size > 0 ? he : undefined;
-      voiResults = multiQueryVOI(network, [...selectedNodes], ev, cachedEngine);
-    } catch {
+      voiResults = multiQueryVOI(network, [...selectedNodes], he ?? new Map(), cachedEngine);
+    } catch (e) {
+      console.warn('VOI computation failed:', e);
       voiResults = null;
     }
   } else {
@@ -1469,9 +1469,9 @@ function renderInfoPanel() {
   const hasVoi = voiResults && voiResults.length > 0;
   const hasTornado = sensitivityMode && sensitivityResults && sensitivityResults.length > 0;
 
-  // Build tabs: VOI + CPT per selected node + (optional) Parameters
+  // Build tabs: VOI (always when selected) + CPT per selected node + (optional) Parameters
   const tabs: Array<{ id: string; label: string }> = [];
-  if (hasVoi) tabs.push({ id: 'voi', label: 'Value of Info' });
+  tabs.push({ id: 'voi', label: 'Value of Info' });
   for (const name of selected) tabs.push({ id: `cpt:${name}`, label: `P(${name})` });
   if (hasTornado) tabs.push({ id: 'params', label: 'Parameters' });
 
@@ -1498,18 +1498,21 @@ function renderInfoPanel() {
   const bodyEl = document.getElementById('info-body')!;
   let html = '<div class="panel-content">';
 
-  if (activeInfoTab === 'voi' && hasVoi) {
+  if (activeInfoTab === 'voi') {
     const queryLabel = selected.length > 1 ? selected.join(', ') : selected[0];
-    const maxVoi = voiResults![0].voi || 0.01;
     html += `<div class="panel-title">Best observations to learn about ${escapeHtml(queryLabel)}</div>`;
-    for (const r of voiResults!.slice(0, 15)) {
-      const pct = Math.min(100, (r.voi / maxVoi) * 100);
-      html += `<div class="voi-row" data-var="${r.variable}" title="VOI: ${r.voi.toFixed(4)} bits\nBase entropy: ${r.baseEntropy.toFixed(4)} bits">`;
-      html += `<span class="voi-name">${r.variable}</span>`;
-      html += `<span class="voi-bar"><span class="voi-bar-fill" style="width:${pct}%;background:var(--accent)"></span></span>`;
-      html += `<span class="voi-value">${r.voi.toFixed(3)}</span></div>`;
+    if (hasVoi) {
+      const maxVoi = voiResults![0].voi || 0.01;
+      for (const r of voiResults!.slice(0, 15)) {
+        const pct = Math.min(100, (r.voi / maxVoi) * 100);
+        html += `<div class="voi-row" data-var="${r.variable}" title="VOI: ${r.voi.toFixed(4)} bits\nBase entropy: ${r.baseEntropy.toFixed(4)} bits">`;
+        html += `<span class="voi-name">${r.variable}</span>`;
+        html += `<span class="voi-bar"><span class="voi-bar-fill" style="width:${pct}%;background:var(--accent)"></span></span>`;
+        html += `<span class="voi-value">${r.voi.toFixed(3)}</span></div>`;
+      }
+    } else {
+      html += '<div style="color:var(--text-dim);padding:8px 0">No additional observations available</div>';
     }
-    if (voiResults!.length === 0) html += '<div style="color:var(--text-dim);padding:8px 0">All variables observed</div>';
   } else if (activeInfoTab.startsWith('cpt:')) {
     const varName = activeInfoTab.slice(4);
     html += buildCptHtml(varName);
