@@ -90,6 +90,7 @@
       font-size: 12px;
     }
     .toolbar button:hover { background: var(--border); }
+    .toolbar button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
     .toolbar .hint { font-size: 11px; color: var(--text-dim); }
     #graph-container {
       flex: 1;
@@ -183,6 +184,64 @@
       cursor: pointer;
     }
     .export-menu button:hover { background: var(--border); }
+
+    /* Sensitivity panel */
+    #sensitivity-panel {
+      display: none;
+      position: fixed;
+      bottom: 16px;
+      left: 16px;
+      width: 320px;
+      max-height: 50vh;
+      overflow: auto;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0;
+      font-size: 12px;
+      color: var(--text);
+      box-shadow: 0 4px 16px var(--node-shadow);
+      z-index: 100;
+    }
+    #sensitivity-panel.visible { display: block; }
+    .panel-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+    }
+    .panel-tab {
+      flex: 1;
+      padding: 8px;
+      background: none;
+      border: none;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+    }
+    .panel-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .panel-tab:hover { background: var(--bg-bar); }
+    .panel-content { padding: 8px 12px; }
+    .panel-content .panel-title {
+      font-weight: 700; font-size: 13px; margin-bottom: 6px; color: var(--accent);
+    }
+    .voi-row, .tornado-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 0;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+    }
+    .voi-row:hover, .tornado-row:hover { background: var(--bg-bar); }
+    .voi-row:last-child, .tornado-row:last-child { border-bottom: none; }
+    .voi-name { flex: 1; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .voi-bar { width: 80px; height: 8px; background: var(--bg-bar); border-radius: 4px; overflow: hidden; flex-shrink: 0; }
+    .voi-bar-fill { height: 100%; border-radius: 4px; }
+    .voi-value { width: 48px; text-align: right; font-size: 11px; color: var(--text-secondary); flex-shrink: 0; }
+    .tornado-param { flex: 1; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tornado-range { width: 100px; height: 10px; background: var(--bg-bar); border-radius: 5px; overflow: hidden; position: relative; flex-shrink: 0; }
+    .tornado-range-fill { height: 100%; position: absolute; border-radius: 5px; }
   </style>
 </head>
 <body>
@@ -243,6 +302,7 @@
     <button id="btn-layout">Auto Layout</button>
     <button id="btn-fit">Fit View</button>
     <button id="btn-clear-evidence">Clear Evidence</button>
+    <button id="btn-sensitivity" title="Toggle sensitivity analysis: select a node to see which variables and parameters influence it most">Sensitivity</button>
     <span class="export-wrapper">
       <button id="btn-export">Export</button>
       <span class="export-menu" id="export-menu">
@@ -254,6 +314,14 @@
   </div>
   <div id="graph-container"></div>
   <div id="cpt-panel"></div>
+  <div id="sensitivity-panel">
+    <div class="panel-tabs">
+      <button class="panel-tab active" data-tab="voi">Value of Info</button>
+      <button class="panel-tab" data-tab="tornado">Top Parameters</button>
+    </div>
+    <div class="panel-content" id="voi-content"></div>
+    <div class="panel-content" id="tornado-content" style="display:none"></div>
+  </div>
   <script type="module" src="/src/viewer/main.ts"></script>
 </body>
 </html>

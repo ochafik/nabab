@@ -6,10 +6,13 @@ import type { Variable, CPT, Evidence, LikelihoodEvidence, Distribution } from '
 import { parseCSV, learnStructure } from '../lib/structure-learning.js';
 import { toXmlBif } from '../lib/xmlbif-writer.js';
 import { toJSON } from '../lib/json-export.js';
+import { analyticSensitivity, variableInfluenceMap, topInfluentialAnalytic, type AnalyticSensitivityResult } from '../lib/analytic-sensitivity.js';
+import { valueOfInformation, type VOIResult } from '../lib/voi.js';
 
 // Compile-time flag: set to true by vite.config.mcp.ts, false otherwise.
 declare const __MCP_APP__: boolean;
 const IS_MCP = typeof __MCP_APP__ !== 'undefined' && __MCP_APP__;
+const ARR_LEN = 7; // rendered arrowhead length in px
 
 let network: BayesianNetwork | null = null;
 let cachedEngine: CachedInferenceEngine | null = null;
@@ -22,6 +25,13 @@ let rememberedSoft = new Map<string, Map<string, number>>();
 let tweakedOutcomes = new Map<string, Set<string>>();
 let nodePositions = new Map<string, { x: number; y: number }>();
 let selectedNodes = new Set<string>();
+
+// ─── Sensitivity analysis state ─────────────────────────────────────
+let sensitivityMode = false;
+let sensitivityQuery: string | null = null; // query variable name
+let sensitivityInfluence: Map<string, number> | null = null; // variable → max |derivative|
+let sensitivityResults: AnalyticSensitivityResult[] | null = null;
+let voiResults: VOIResult[] | null = null;
 
 // Track current source for hash serialization
 let currentSource: { type: 'builtin'; name: string } | { type: 'custom'; xmlbif: string } =
@@ -289,6 +299,14 @@ function parsedNetworkToXmlBif(p: { name: string; variables: readonly Variable[]
 // ─── Selection ───────────────────────────────────────────────────────
 
 function selectNode(name: string, additive: boolean) {
+  // In sensitivity mode, single-click sets the query target
+  if (sensitivityMode && !additive) {
+    sensitivityQuery = name;
+    selectedNodes.clear();
+    selectedNodes.add(name);
+    render();
+    return;
+  }
   if (additive) {
     if (selectedNodes.has(name)) selectedNodes.delete(name);
     else selectedNodes.add(name);
@@ -759,8 +777,30 @@ function render() {
   if (!network || !cachedEngine) return;
   const [he, se] = effectiveEvidence();
   const result = cachedEngine.infer(he, se);
+
+  // Compute sensitivity data when mode is active and a query is selected
+  if (sensitivityMode && sensitivityQuery && network.getVariable(sensitivityQuery)) {
+    const qVar = network.getVariable(sensitivityQuery)!;
+    const qOutcome = qVar.outcomes[0]; // sensitivity w.r.t. first outcome
+    try {
+      sensitivityResults = analyticSensitivity(network, sensitivityQuery, qOutcome, he.size > 0 ? he : undefined);
+      sensitivityInfluence = variableInfluenceMap(sensitivityResults);
+      voiResults = valueOfInformation(network, sensitivityQuery, he.size > 0 ? he : undefined, cachedEngine);
+    } catch {
+      sensitivityResults = null;
+      sensitivityInfluence = null;
+      voiResults = null;
+    }
+  } else {
+    sensitivityInfluence = null;
+    sensitivityResults = null;
+    voiResults = null;
+  }
+
   renderGraph(network, result.posteriors);
   renderCptPanel();
+  renderSensitivityPanel();
+
   if (IS_MCP) {
     saveStateToLocalStorage();
   } else {
@@ -901,8 +941,8 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
   shadow.append('feDropShadow').attr('dx', 0).attr('dy', 2).attr('stdDeviation', 4).attr('flood-opacity', 0.15);
 
   defs.append('marker').attr('id', 'arr')
-    .attr('viewBox', '0 -4 8 8').attr('refX', 4).attr('refY', 0)
-    .attr('markerWidth', 5).attr('markerHeight', 5).attr('orient', 'auto')
+    .attr('viewBox', '0 -4 8 8').attr('refX', 8).attr('refY', 0)
+    .attr('markerWidth', ARR_LEN).attr('markerHeight', ARR_LEN).attr('orient', 'auto')
     .append('path').attr('d', 'M0,-3.5L8,0L0,3.5').attr('fill', 'var(--edge)');
 
   // Ensure fallback positions
@@ -944,10 +984,35 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
     const varIdx = net.variables.indexOf(v);
     const hue = (varIdx / net.variables.length) * 360;
     const isDark = matchMedia('(prefers-color-scheme: dark)').matches;
-    const bgFill = isDegenerate ? (isDark ? '#2a1a1a' : '#fef2f2')
-      : isObs ? `hsl(${hue}, ${isHard ? 20 : 25}%, ${isDark ? 20 : 92}%)` : 'var(--bg-node)';
-    const borderCol = isDegenerate ? 'var(--accent-hard)'
-      : isHard ? 'var(--accent-hard)' : isSoft ? 'var(--accent-soft)' : 'var(--border-node)';
+    // Sensitivity heat-map: tint node by influence on the query variable
+    const influenceVal = sensitivityInfluence?.get(v.name) ?? 0;
+    const isQueryNode = sensitivityMode && sensitivityQuery === v.name;
+    const maxInfluence = sensitivityInfluence ? Math.max(...sensitivityInfluence.values(), 0.01) : 1;
+    const influenceNorm = Math.min(1, influenceVal / maxInfluence); // 0..1
+
+    let bgFill: string;
+    let borderCol: string;
+    if (isQueryNode) {
+      bgFill = isDark ? '#1a2a3a' : '#eff6ff';
+      borderCol = 'var(--accent)';
+    } else if (sensitivityMode && sensitivityInfluence) {
+      // Heat-map: interpolate from neutral to warm orange/red by influence
+      const sat = Math.round(20 + influenceNorm * 60);
+      const lit = isDark ? Math.round(15 + (1 - influenceNorm) * 10) : Math.round(95 - influenceNorm * 15);
+      bgFill = `hsl(${Math.round(30 - influenceNorm * 20)}, ${sat}%, ${lit}%)`;
+      borderCol = influenceNorm > 0.3
+        ? `hsl(${Math.round(20 - influenceNorm * 15)}, ${Math.round(50 + influenceNorm * 40)}%, ${isDark ? 55 : 45}%)`
+        : 'var(--border-node)';
+    } else if (isDegenerate) {
+      bgFill = isDark ? '#2a1a1a' : '#fef2f2';
+      borderCol = 'var(--accent-hard)';
+    } else if (isObs) {
+      bgFill = `hsl(${hue}, ${isHard ? 20 : 25}%, ${isDark ? 20 : 92}%)`;
+      borderCol = isHard ? 'var(--accent-hard)' : isSoft ? 'var(--accent-soft)' : 'var(--border-node)';
+    } else {
+      bgFill = 'var(--bg-node)';
+      borderCol = 'var(--border-node)';
+    }
     // Accent for sliders: colored when observed, neutral when not
     const nodeAccent = isObs
       ? (isHard ? 'var(--accent-hard)' : isSoft ? 'var(--accent-soft)' : `hsl(${hue}, 55%, ${isDark ? 55 : 45}%)`)
@@ -1162,12 +1227,20 @@ function drawEdges(net: BayesianNetwork) {
     const [x1, y1] = slotXY(fp.x, fp.y, nodeW(pv), nodeH(pv), e.ps, s.fi, s.fc);
     const [x2, y2] = slotXY(tp.x, tp.y, nodeW(cv), nodeH(cv), e.cs, s.ti, s.tc);
     const dx = x2 - x1, dy = y2 - y1, len = Math.sqrt(dx * dx + dy * dy) || 1;
-    // Shorten end by arrowhead size
-    const ex = x2 - dx / len * 4, ey = y2 - dy / len * 4;
-    // Cubic bezier with control points offset along the edge's dominant axis
-    const curvature = Math.min(len * 0.3, 60);
-    const cx1 = x1, cy1 = y1 + curvature;
-    const cx2 = ex, cy2 = ey - curvature;
+    const ex = x2, ey = y2;
+    // Cubic bezier: control points blend side normal (70%) with edge direction (30%)
+    // so the curve arrives at a natural angle, not perfectly perpendicular
+    const cOff = Math.min(len * 0.4, 80);
+    const sideDir = (side: Side): [number, number] =>
+      side === 'bottom' ? [0, 1] : side === 'top' ? [0, -1] : side === 'right' ? [1, 0] : [-1, 0];
+    const [sdx1, sdy1] = sideDir(e.ps);
+    const [sdx2, sdy2] = sideDir(e.cs);
+    const nx = dx / len, ny = dy / len;
+    const b = 0.3; // blend factor: 0 = pure side normal, 1 = pure edge direction
+    const cx1 = x1 + (sdx1 * (1 - b) + nx * b) * cOff;
+    const cy1 = y1 + (sdy1 * (1 - b) + ny * b) * cOff;
+    const cx2 = ex + (sdx2 * (1 - b) - nx * b) * cOff;
+    const cy2 = ey + (sdy2 * (1 - b) - ny * b) * cOff;
     _edgeGroup.append('path')
       .attr('d', `M${x1},${y1} C${cx1},${cy1} ${cx2},${cy2} ${ex},${ey}`)
       .attr('fill', 'none')
@@ -1219,8 +1292,9 @@ function addSliderThumb(
 
   const circle = thumbG.append('circle')
     .attr('cx', cx).attr('cy', cy).attr('r', r)
-    .attr('fill', 'var(--thumb)').attr('stroke', fillVar).attr('stroke-width', 2)
-    .attr('cursor', 'ew-resize').attr('opacity', isObs ? 1 : 0.4);
+    .attr('fill', 'var(--bg-node)').attr('stroke', fillVar).attr('stroke-width', 2.5)
+    .attr('cursor', 'ew-resize').attr('opacity', isObs ? 1 : 0.4)
+    .attr('filter', isObs ? 'drop-shadow(0 1px 3px rgba(0,0,0,0.3))' : '');
 
   // Subtle X inside thumb (shown on hover when observed)
   const s = Math.max(2, r * 0.4); // X arm size, proportional to thumb
@@ -1391,6 +1465,108 @@ function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Va
     y += NODE_H_PER_OUTCOME;
   }
 }
+
+// ─── Sensitivity panel rendering ────────────────────────────────────
+
+function renderSensitivityPanel() {
+  const panel = document.getElementById('sensitivity-panel');
+  if (!panel) return;
+
+  if (!sensitivityMode || !sensitivityQuery) {
+    panel.classList.remove('visible');
+    return;
+  }
+  panel.classList.add('visible');
+
+  // VOI tab
+  const voiEl = document.getElementById('voi-content')!;
+  if (voiResults && voiResults.length > 0) {
+    const maxVoi = voiResults[0].voi || 0.01;
+    let html = `<div class="panel-title">Observe next for "${sensitivityQuery}"</div>`;
+    for (const r of voiResults.slice(0, 12)) {
+      const pct = Math.min(100, (r.voi / maxVoi) * 100);
+      html += `<div class="voi-row" data-var="${r.variable}" title="VOI: ${r.voi.toFixed(4)} bits&#10;Base entropy: ${r.baseEntropy.toFixed(4)} bits">`;
+      html += `<span class="voi-name">${r.variable}</span>`;
+      html += `<span class="voi-bar"><span class="voi-bar-fill" style="width:${pct}%;background:var(--accent)"></span></span>`;
+      html += `<span class="voi-value">${r.voi.toFixed(3)}</span>`;
+      html += `</div>`;
+    }
+    if (voiResults.length === 0) html += '<div style="color:var(--text-dim);padding:8px 0">No unobserved variables</div>';
+    voiEl.innerHTML = html;
+    // Click to highlight variable
+    for (const row of voiEl.querySelectorAll<HTMLElement>('.voi-row')) {
+      row.addEventListener('click', () => {
+        const name = row.dataset.var!;
+        selectedNodes.clear();
+        selectedNodes.add(name);
+        render();
+      });
+    }
+  } else {
+    voiEl.innerHTML = '<div style="color:var(--text-dim);padding:8px 0">Select a query node to see VOI</div>';
+  }
+
+  // Tornado / top parameters tab
+  const tornadoEl = document.getElementById('tornado-content')!;
+  if (sensitivityResults && sensitivityResults.length > 0) {
+    const top = [...sensitivityResults].sort((a, b) => Math.abs(b.derivative) - Math.abs(a.derivative)).slice(0, 12);
+    const maxDeriv = Math.abs(top[0]?.derivative) || 0.01;
+    let html = `<div class="panel-title">Top parameters for "${sensitivityQuery}"</div>`;
+    for (const r of top) {
+      const pct = Math.min(100, (Math.abs(r.derivative) / maxDeriv) * 100);
+      const sign = r.derivative >= 0 ? '+' : '';
+      html += `<div class="tornado-row" data-var="${r.variable}" title="${r.variable} | ${r.parentConfig}&#10;${r.outcome}: ${r.currentValue.toFixed(3)}&#10;Derivative: ${sign}${r.derivative.toFixed(4)}&#10;Range: ${r.range.toFixed(4)}">`;
+      html += `<span class="tornado-param">${r.variable}.${r.outcome}</span>`;
+      html += `<span class="tornado-range"><span class="tornado-range-fill" style="width:${pct}%;background:${r.derivative >= 0 ? 'var(--accent)' : 'var(--accent-hard)'}"></span></span>`;
+      html += `<span class="voi-value">${sign}${r.derivative.toFixed(2)}</span>`;
+      html += `</div>`;
+    }
+    tornadoEl.innerHTML = html;
+    for (const row of tornadoEl.querySelectorAll<HTMLElement>('.tornado-row')) {
+      row.addEventListener('click', () => {
+        const name = row.dataset.var!;
+        selectedNodes.clear();
+        selectedNodes.add(name);
+        render();
+      });
+    }
+  } else {
+    tornadoEl.innerHTML = '<div style="color:var(--text-dim);padding:8px 0">Select a query node</div>';
+  }
+}
+
+// Tab switching
+document.querySelectorAll<HTMLElement>('.panel-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    const target = tab.dataset.tab!;
+    document.getElementById('voi-content')!.style.display = target === 'voi' ? '' : 'none';
+    document.getElementById('tornado-content')!.style.display = target === 'tornado' ? '' : 'none';
+  });
+});
+
+// Sensitivity mode toggle
+document.getElementById('btn-sensitivity')?.addEventListener('click', () => {
+  sensitivityMode = !sensitivityMode;
+  const btn = document.getElementById('btn-sensitivity')!;
+  btn.classList.toggle('active', sensitivityMode);
+
+  if (sensitivityMode) {
+    // Use first selected node as query, or first variable
+    if (selectedNodes.size === 1) {
+      sensitivityQuery = [...selectedNodes][0];
+    } else if (network) {
+      sensitivityQuery = network.variables[0]?.name ?? null;
+    }
+  } else {
+    sensitivityQuery = null;
+    sensitivityInfluence = null;
+    sensitivityResults = null;
+    voiResults = null;
+  }
+  render();
+});
 
 // ─── MCP App lifecycle ──────────────────────────────────────────────
 
