@@ -930,6 +930,15 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
     .attr('markerWidth', ARR_LEN).attr('markerHeight', ARR_LEN).attr('orient', 'auto')
     .append('path').attr('d', 'M0,-3.5L8,0L0,3.5').attr('fill', 'var(--edge)');
 
+  // SVG styles for hover highlight from panel
+  defs.append('style').text(`
+    .node-g.highlight > rect:first-child {
+      stroke: var(--accent) !important;
+      stroke-width: 3 !important;
+      filter: drop-shadow(0 0 6px var(--accent));
+    }
+  `);
+
   // Ensure fallback positions
   for (const v of net.variables)
     if (!nodePositions.has(v.name))
@@ -1533,10 +1542,18 @@ function renderInfoPanel() {
   html += '</div>';
   bodyEl.innerHTML = html;
 
-  // Click handlers on VOI/tornado rows
+  // Hover + click handlers on VOI/tornado rows
   for (const row of bodyEl.querySelectorAll<HTMLElement>('.voi-row, .tornado-row')) {
+    const name = row.dataset.var!;
+    row.addEventListener('mouseenter', () => {
+      const nodeEl = document.querySelector<SVGGElement>(`.node-g[data-var="${name}"]`);
+      if (nodeEl) nodeEl.classList.add('highlight');
+    });
+    row.addEventListener('mouseleave', () => {
+      const nodeEl = document.querySelector<SVGGElement>(`.node-g[data-var="${name}"]`);
+      if (nodeEl) nodeEl.classList.remove('highlight');
+    });
     row.addEventListener('click', () => {
-      const name = row.dataset.var!;
       selectedNodes.clear();
       selectedNodes.add(name);
       render();
