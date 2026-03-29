@@ -7,6 +7,10 @@ import { parseCSV, learnStructure } from '../lib/structure-learning.js';
 import { toXmlBif } from '../lib/xmlbif-writer.js';
 import { toJSON } from '../lib/json-export.js';
 
+// Compile-time flag: set to true by vite.config.mcp.ts, false otherwise.
+declare const __MCP_APP__: boolean;
+const IS_MCP = typeof __MCP_APP__ !== 'undefined' && __MCP_APP__;
+
 let network: BayesianNetwork | null = null;
 let cachedEngine: CachedInferenceEngine | null = null;
 let hardEvidence: Evidence = new Map();
@@ -129,6 +133,78 @@ async function loadStateFromHash(): Promise<boolean> {
     }
 
     return true;
+  } catch {
+    return false;
+  }
+}
+
+// ─── localStorage state persistence (MCP App mode) ──────────────────
+
+let lsWriteTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function buildSerializedState(): SerializedState {
+  const state: SerializedState = {
+    s: currentSource.type === 'builtin' ? { t: 'b', n: currentSource.name } : { t: 'c', x: currentSource.xmlbif },
+  };
+  if (hardEvidence.size > 0) {
+    state.h = {};
+    for (const [k, v] of hardEvidence) if (observationEnabled.has(k)) state.h[k] = v;
+    if (Object.keys(state.h).length === 0) delete state.h;
+  }
+  if (softEvidence.size > 0) {
+    state.e = {};
+    for (const [k, v] of softEvidence) if (observationEnabled.has(k)) state.e[k] = Object.fromEntries(v);
+    if (Object.keys(state.e).length === 0) delete state.e;
+  }
+  if (observationEnabled.size > 0) state.o = [...observationEnabled];
+  if (nodePositions.size > 0) {
+    state.p = {};
+    for (const [k, v] of nodePositions) state.p[k] = { x: Math.round(v.x), y: Math.round(v.y) };
+  }
+  return state;
+}
+
+function saveStateToLocalStorage() {
+  if (lsWriteTimeout) clearTimeout(lsWriteTimeout);
+  lsWriteTimeout = setTimeout(() => {
+    try {
+      localStorage.setItem('nabab-state', JSON.stringify(buildSerializedState()));
+    } catch { /* quota exceeded or unavailable */ }
+  }, 300);
+}
+
+function restoreSerializedState(state: SerializedState): boolean {
+  try {
+    if (state.s.t === 'b') {
+      currentSource = { type: 'builtin', name: state.s.n };
+      // In MCP mode we can't fetch example files — need the XMLBIF inline
+      if (!state.s.n.includes('<')) return false;
+    } else {
+      currentSource = { type: 'custom', xmlbif: state.s.x };
+    }
+    const content = state.s.t === 'c' ? state.s.x : null;
+    if (!content) return false;
+    network = BayesianNetwork.parse(content);
+    cachedEngine = new CachedInferenceEngine(network);
+    _priorCache = null;
+    hardEvidence = new Map(Object.entries(state.h ?? {}));
+    softEvidence = new Map(Object.entries(state.e ?? {}).map(([k, v]) => [k, new Map(Object.entries(v))]));
+    observationEnabled = new Set(state.o ?? []);
+    rememberedHard = new Map(); rememberedSoft = new Map(); tweakedOutcomes = new Map();
+    nodePositions = state.p ? new Map(Object.entries(state.p)) : new Map();
+    document.getElementById('network-name')!.textContent = network.name;
+    if (nodePositions.size === 0) autoLayout(); else render();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function loadStateFromLocalStorage(): boolean {
+  try {
+    const saved = localStorage.getItem('nabab-state');
+    if (!saved) return false;
+    return restoreSerializedState(JSON.parse(saved));
   } catch {
     return false;
   }
@@ -258,110 +334,101 @@ document.addEventListener('keydown', (e) => {
 
 // ─── Event listeners ─────────────────────────────────────────────────
 
-document.getElementById('btn-load-example')!.addEventListener('click', loadExample);
-document.getElementById('example-select')!.addEventListener('change', loadExample);
-document.getElementById('btn-clear-evidence')!.addEventListener('click', () => {
-  hardEvidence = new Map(); softEvidence = new Map();
-  observationEnabled = new Set(); render();
-});
-document.getElementById('btn-layout')!.addEventListener('click', autoLayout);
-document.getElementById('btn-fit')!.addEventListener('click', fitView);
+if (!IS_MCP) {
+  document.getElementById('btn-load-example')!.addEventListener('click', loadExample);
+  document.getElementById('example-select')!.addEventListener('change', loadExample);
+  document.getElementById('btn-layout')!.addEventListener('click', autoLayout);
+  document.getElementById('btn-fit')!.addEventListener('click', fitView);
 
-// ─── Export ────────────────────────────────────────────────────────────
-const exportMenu = document.getElementById('export-menu')!;
-document.getElementById('btn-export')!.addEventListener('click', () => {
-  exportMenu.classList.toggle('visible');
-});
-// Close menu when clicking outside
-document.addEventListener('click', (e) => {
-  if (!(e.target as HTMLElement).closest('.export-wrapper')) {
-    exportMenu.classList.remove('visible');
+  // Export
+  const exportMenu = document.getElementById('export-menu')!;
+  document.getElementById('btn-export')!.addEventListener('click', () => exportMenu.classList.toggle('visible'));
+  document.addEventListener('click', (e) => {
+    if (!(e.target as HTMLElement).closest('.export-wrapper')) exportMenu.classList.remove('visible');
+  });
+
+  function downloadFile(filename: string, content: string, mimeType: string) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   }
-});
 
-function downloadFile(filename: string, content: string, mimeType: string) {
-  const blob = new Blob([content], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  document.getElementById('btn-export-xmlbif')!.addEventListener('click', () => {
+    if (!network) return;
+    downloadFile(`${network.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.xmlbif`, toXmlBif(network), 'application/xml');
+    exportMenu.classList.remove('visible');
+  });
+  document.getElementById('btn-export-json')!.addEventListener('click', () => {
+    if (!network) return;
+    downloadFile(`${network.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`, JSON.stringify(toJSON(network), null, 2), 'application/json');
+    exportMenu.classList.remove('visible');
+  });
+
+  // Paste XMLBIF
+  document.body.addEventListener('paste', (e: ClipboardEvent) => {
+    const t = e.clipboardData?.getData('text');
+    if (t && (t.includes('<BIF') || t.trimStart().startsWith('network'))) { e.preventDefault(); loadNetwork(t); }
+  });
+
+  // Drag-and-drop
+  const container = document.getElementById('graph-container')!;
+  container.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer!.dropEffect = 'copy'; });
+  container.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const file = e.dataTransfer?.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result !== 'string') return;
+        const content = reader.result;
+        const ext = file.name.toLowerCase();
+        const isCSV = ext.endsWith('.csv') || ext.endsWith('.tsv')
+          || (!content.trimStart().startsWith('<') && /[,\t;]/.test(content.split('\n')[0]));
+        if (isCSV) {
+          const statusEl = document.getElementById('network-name')!;
+          statusEl.textContent = 'Learning structure\u2026';
+          setTimeout(() => {
+            try {
+              const data = parseCSV(content);
+              const parsed = learnStructure(data);
+              const bn = new BayesianNetwork(parsed);
+              network = bn;
+              cachedEngine = new CachedInferenceEngine(network);
+              _priorCache = null;
+              hardEvidence = new Map(); softEvidence = new Map();
+              observationEnabled = new Set();
+              rememberedHard = new Map(); rememberedSoft = new Map();
+              nodePositions = new Map();
+              currentSource = { type: 'custom', xmlbif: parsedNetworkToXmlBif(parsed) };
+              statusEl.textContent = network.name;
+              autoLayout();
+            } catch (err) {
+              statusEl.textContent = 'Error: ' + (err instanceof Error ? err.message : String(err));
+            }
+          }, 0);
+        } else {
+          loadNetwork(content);
+        }
+      };
+      reader.readAsText(file);
+    }
+  });
+  window.addEventListener('message', (e) => {
+    if (e.data?.type === 'nabab-set-evidence') {
+      hardEvidence = new Map(Object.entries(e.data.evidence));
+      for (const k of hardEvidence.keys()) observationEnabled.add(k);
+      render();
+    } else if (e.data?.type === 'nabab-load-network') loadNetwork(e.data.xmlbif);
+  });
 }
 
-document.getElementById('btn-export-xmlbif')!.addEventListener('click', () => {
-  if (!network) return;
-  const content = toXmlBif(network);
-  const safeName = network.name.replace(/[^a-zA-Z0-9_-]/g, '_');
-  downloadFile(`${safeName}.xmlbif`, content, 'application/xml');
-  exportMenu.classList.remove('visible');
-});
-
-document.getElementById('btn-export-json')!.addEventListener('click', () => {
-  if (!network) return;
-  const content = JSON.stringify(toJSON(network), null, 2);
-  const safeName = network.name.replace(/[^a-zA-Z0-9_-]/g, '_');
-  downloadFile(`${safeName}.json`, content, 'application/json');
-  exportMenu.classList.remove('visible');
-});
-
-// Paste XMLBIF
-document.body.addEventListener('paste', (e: ClipboardEvent) => {
-  const t = e.clipboardData?.getData('text');
-  if (t && (t.includes('<BIF') || t.trimStart().startsWith('network'))) { e.preventDefault(); loadNetwork(t); }
-});
-
-// Drag-and-drop XMLBIF files
-const container = document.getElementById('graph-container')!;
-container.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer!.dropEffect = 'copy'; });
-container.addEventListener('drop', (e) => {
-  e.preventDefault();
-  const file = e.dataTransfer?.files[0];
-  if (file) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result !== 'string') return;
-      const content = reader.result;
-      const ext = file.name.toLowerCase();
-      const isCSV = ext.endsWith('.csv') || ext.endsWith('.tsv')
-        || (!content.trimStart().startsWith('<') && /[,\t;]/.test(content.split('\n')[0]));
-      if (isCSV) {
-        const statusEl = document.getElementById('network-name')!;
-        statusEl.textContent = 'Learning structure\u2026';
-        setTimeout(() => {
-          try {
-            const data = parseCSV(content);
-            const parsed = learnStructure(data);
-            const bn = new BayesianNetwork(parsed);
-            network = bn;
-            cachedEngine = new CachedInferenceEngine(network);
-            _priorCache = null;
-            hardEvidence = new Map(); softEvidence = new Map();
-            observationEnabled = new Set();
-            rememberedHard = new Map(); rememberedSoft = new Map();
-            nodePositions = new Map();
-            currentSource = { type: 'custom', xmlbif: parsedNetworkToXmlBif(parsed) };
-            statusEl.textContent = network.name;
-            autoLayout();
-          } catch (err) {
-            statusEl.textContent = 'Error: ' + (err instanceof Error ? err.message : String(err));
-          }
-        }, 0);
-      } else {
-        loadNetwork(content);
-      }
-    };
-    reader.readAsText(file);
-  }
-});
-window.addEventListener('message', (e) => {
-  if (e.data?.type === 'nabab-set-evidence') {
-    hardEvidence = new Map(Object.entries(e.data.evidence));
-    for (const k of hardEvidence.keys()) observationEnabled.add(k);
-    render();
-  } else if (e.data?.type === 'nabab-load-network') loadNetwork(e.data.xmlbif);
+// Clear evidence button works in both modes
+document.getElementById('btn-clear-evidence')?.addEventListener('click', () => {
+  hardEvidence = new Map(); softEvidence = new Map();
+  observationEnabled = new Set(); render();
 });
 
 // ─── Layout ──────────────────────────────────────────────────────────
@@ -694,11 +761,15 @@ function render() {
   const result = cachedEngine.infer(he, se);
   renderGraph(network, result.posteriors);
   renderCptPanel();
-  saveStateToHash();
-  if (window.parent !== window) {
-    const d: Record<string, Record<string, number>> = {};
-    for (const [v, dist] of result.posteriors) d[v.name] = Object.fromEntries(dist);
-    window.parent.postMessage({ type: 'nabab-posteriors', d }, '*');
+  if (IS_MCP) {
+    saveStateToLocalStorage();
+  } else {
+    saveStateToHash();
+    if (window.parent !== window) {
+      const d: Record<string, Record<string, number>> = {};
+      for (const [v, dist] of result.posteriors) d[v.name] = Object.fromEntries(dist);
+      window.parent.postMessage({ type: 'nabab-posteriors', d }, '*');
+    }
   }
 }
 
@@ -1091,9 +1162,15 @@ function drawEdges(net: BayesianNetwork) {
     const [x1, y1] = slotXY(fp.x, fp.y, nodeW(pv), nodeH(pv), e.ps, s.fi, s.fc);
     const [x2, y2] = slotXY(tp.x, tp.y, nodeW(cv), nodeH(cv), e.cs, s.ti, s.tc);
     const dx = x2 - x1, dy = y2 - y1, len = Math.sqrt(dx * dx + dy * dy) || 1;
-    _edgeGroup.append('line')
-      .attr('x1', x1).attr('y1', y1)
-      .attr('x2', x2 - dx / len * 4).attr('y2', y2 - dy / len * 4)
+    // Shorten end by arrowhead size
+    const ex = x2 - dx / len * 4, ey = y2 - dy / len * 4;
+    // Cubic bezier with control points offset along the edge's dominant axis
+    const curvature = Math.min(len * 0.3, 60);
+    const cx1 = x1, cy1 = y1 + curvature;
+    const cx2 = ex, cy2 = ey - curvature;
+    _edgeGroup.append('path')
+      .attr('d', `M${x1},${y1} C${cx1},${cy1} ${cx2},${cy2} ${ex},${ey}`)
+      .attr('fill', 'none')
       .attr('stroke', 'var(--edge)').attr('stroke-width', 1.5).attr('marker-end', 'url(#arr)');
   }
 }
@@ -1315,5 +1392,65 @@ function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Va
   }
 }
 
-// Boot: restore from hash or load default
-loadStateFromHash().then(ok => { if (!ok) loadExampleFile('dogproblem.xmlbif'); });
+// ─── MCP App lifecycle ──────────────────────────────────────────────
+
+async function initMcpApp() {
+  const { App, applyDocumentTheme, applyHostStyleVariables, applyHostFonts } =
+    await import('@modelcontextprotocol/ext-apps');
+
+  // Hide standalone-only toolbar items
+  for (const id of ['btn-load-example', 'example-select', 'btn-export', 'btn-layout', 'btn-fit']) {
+    const el = document.getElementById(id);
+    if (el) (el.closest('.export-wrapper') ?? el).style.display = 'none';
+  }
+  // Hide hint text
+  for (const el of document.querySelectorAll<HTMLElement>('.hint')) el.style.display = 'none';
+
+  const app = new App({ name: 'Nabab Network Viewer', version: '1.0.0' });
+
+  app.ontoolresult = (result) => {
+    const data = result.structuredContent as { xmlbif?: string; evidence?: Record<string, string> } | undefined;
+    if (data?.xmlbif) {
+      loadNetwork(data.xmlbif, true);
+      if (data.evidence) {
+        hardEvidence = new Map(Object.entries(data.evidence));
+        for (const k of hardEvidence.keys()) observationEnabled.add(k);
+        render();
+      }
+    }
+  };
+
+  app.ontoolinput = () => {
+    document.getElementById('network-name')!.textContent = 'Computing…';
+  };
+
+  app.onhostcontextchanged = (ctx) => {
+    if (ctx.theme) applyDocumentTheme(ctx.theme);
+    if (ctx.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
+    if (ctx.styles?.css?.fonts) applyHostFonts(ctx.styles.css.fonts);
+    if (ctx.safeAreaInsets) {
+      const { top, right, bottom, left } = ctx.safeAreaInsets;
+      document.body.style.padding = `${top}px ${right}px ${bottom}px ${left}px`;
+    }
+  };
+
+  app.onerror = console.error;
+  app.onteardown = async () => ({});
+
+  await app.connect();
+  const ctx = app.getHostContext();
+  if (ctx) app.onhostcontextchanged?.(ctx);
+
+  // Try restoring from localStorage
+  if (!loadStateFromLocalStorage()) {
+    document.getElementById('network-name')!.textContent = 'Waiting for network…';
+  }
+}
+
+// ─── Boot ───────────────────────────────────────────────────────────
+
+if (IS_MCP) {
+  initMcpApp().catch(console.error);
+} else {
+  loadStateFromHash().then(ok => { if (!ok) loadExampleFile('dogproblem.xmlbif'); });
+}

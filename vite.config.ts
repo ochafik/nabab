@@ -3,6 +3,7 @@ import { resolve } from 'path';
 
 export default defineConfig({
   root: '.',
+  define: { __MCP_APP__: false },
   build: {
     outDir: 'dist/viewer',
     rollupOptions: {

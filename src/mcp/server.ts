@@ -17,13 +17,14 @@ import { readFileSync, readdirSync, existsSync } from 'fs';
 import { resolve, join } from 'path';
 import { randomUUID } from 'crypto';
 import { BayesianNetwork } from '../lib/network.js';
+import { toXmlBif } from '../lib/xmlbif-writer.js';
 import type { Evidence } from '../lib/types.js';
 import type { CallToolResult, ReadResourceResult } from '@modelcontextprotocol/sdk/types.js';
 import { createQueue, type CommandQueue, type NetworkData } from './commands.js';
 
 // ─── Paths ──────────────────────────────────────────────────────────
 
-const MCP_APP_HTML = join(import.meta.dirname, '../../dist/mcp/mcp-app.html');
+const MCP_APP_HTML = join(import.meta.dirname, '../../dist/mcp/index.html');
 const examplesDir = resolve(import.meta.dirname, '../../../src/main/resources/com/ochafik/math/bayes');
 const localExample = resolve(import.meta.dirname, '../../src/example.xmlbif');
 
@@ -53,6 +54,7 @@ export function createServer(opts: CreateServerOptions = {}): McpServer {
   // Per-session state
   let currentNetwork: BayesianNetwork | null = null;
   let currentEvidence: Evidence = new Map();
+  let currentXmlBif: string | null = null; // raw source for the viewer
   let viewUUID: string | null = null;
 
   function ensureViewUUID(): string {
@@ -144,6 +146,7 @@ export function createServer(opts: CreateServerOptions = {}): McpServer {
           }
         }
         currentNetwork = BayesianNetwork.fromXmlBif(xmlbif);
+        currentXmlBif = xmlbif;
         currentEvidence = new Map();
         return {
           content: [{
@@ -239,9 +242,15 @@ export function createServer(opts: CreateServerOptions = {}): McpServer {
       return { content: [{ type: 'text', text: 'No network loaded. Use load_network first.' }], isError: true };
     }
     const structured = buildQueryResult(variables);
+    // Send XMLBIF so the viewer can run inference locally
+    const xmlbif = currentXmlBif ?? toXmlBif(currentNetwork);
     return {
       content: [{ type: 'text', text: formatQueryText(structured) }],
-      structuredContent: structured as unknown as Record<string, unknown>,
+      structuredContent: {
+        xmlbif,
+        evidence: Object.fromEntries(currentEvidence),
+        ...structured,
+      } as Record<string, unknown>,
     };
   });
 
