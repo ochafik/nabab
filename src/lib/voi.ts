@@ -46,6 +46,43 @@ export function entropy(dist: Map<string, number>): number {
  * @param engine Optional cached inference engine (reused for speed)
  * @returns VOI results sorted by descending VOI
  */
+/**
+ * Compute VOI for multiple query variables simultaneously.
+ * For each candidate X, sums VOI across all query variables:
+ * "How much does observing X reduce total uncertainty about Q₁, Q₂, ...?"
+ */
+export function multiQueryVOI(
+  network: BayesianNetwork,
+  queryVariables: string[],
+  evidence?: Evidence,
+  engine?: CachedInferenceEngine,
+): VOIResult[] {
+  if (queryVariables.length === 0) return [];
+  if (queryVariables.length === 1) return valueOfInformation(network, queryVariables[0], evidence, engine);
+
+  const querySet = new Set(queryVariables);
+  const perQuery = queryVariables.map(q => valueOfInformation(network, q, evidence, engine));
+
+  // Merge: sum VOI across queries per candidate
+  const merged = new Map<string, VOIResult>();
+  for (const results of perQuery) {
+    for (const r of results) {
+      if (querySet.has(r.variable)) continue; // skip if candidate is also a query
+      const existing = merged.get(r.variable);
+      if (existing) {
+        existing.voi += r.voi;
+        existing.baseEntropy += r.baseEntropy;
+      } else {
+        merged.set(r.variable, { ...r, outcomes: [...r.outcomes] });
+      }
+    }
+  }
+
+  const result = [...merged.values()];
+  result.sort((a, b) => b.voi - a.voi);
+  return result;
+}
+
 export function valueOfInformation(
   network: BayesianNetwork,
   queryVariable: string,

@@ -7,7 +7,7 @@ import { parseCSV, learnStructure } from '../lib/structure-learning.js';
 import { toXmlBif } from '../lib/xmlbif-writer.js';
 import { toJSON } from '../lib/json-export.js';
 import { analyticSensitivity, variableInfluenceMap, topInfluentialAnalytic, type AnalyticSensitivityResult } from '../lib/analytic-sensitivity.js';
-import { valueOfInformation, type VOIResult } from '../lib/voi.js';
+import { valueOfInformation, multiQueryVOI, type VOIResult } from '../lib/voi.js';
 
 // Compile-time flag: set to true by vite.config.mcp.ts, false otherwise.
 declare const __MCP_APP__: boolean;
@@ -778,22 +778,31 @@ function render() {
   const [he, se] = effectiveEvidence();
   const result = cachedEngine.infer(he, se);
 
-  // Compute sensitivity data when mode is active and a query is selected
+  // Sensitivity heat-map: only when mode is active and a query is selected
   if (sensitivityMode && sensitivityQuery && network.getVariable(sensitivityQuery)) {
     const qVar = network.getVariable(sensitivityQuery)!;
-    const qOutcome = qVar.outcomes[0]; // sensitivity w.r.t. first outcome
+    const qOutcome = qVar.outcomes[0];
     try {
       sensitivityResults = analyticSensitivity(network, sensitivityQuery, qOutcome, he.size > 0 ? he : undefined);
       sensitivityInfluence = variableInfluenceMap(sensitivityResults);
-      voiResults = valueOfInformation(network, sensitivityQuery, he.size > 0 ? he : undefined, cachedEngine);
     } catch {
       sensitivityResults = null;
       sensitivityInfluence = null;
-      voiResults = null;
     }
   } else {
     sensitivityInfluence = null;
     sensitivityResults = null;
+  }
+
+  // VOI: compute whenever any node is selected (no sensitivity mode needed)
+  if (selectedNodes.size > 0) {
+    try {
+      const ev = he.size > 0 ? he : undefined;
+      voiResults = multiQueryVOI(network, [...selectedNodes], ev, cachedEngine);
+    } catch {
+      voiResults = null;
+    }
+  } else {
     voiResults = null;
   }
 
@@ -1472,18 +1481,28 @@ function renderSensitivityPanel() {
   const panel = document.getElementById('sensitivity-panel');
   if (!panel) return;
 
-  if (!sensitivityMode || !sensitivityQuery) {
+  const hasVoi = voiResults && voiResults.length > 0;
+  const hasTornado = sensitivityMode && sensitivityResults && sensitivityResults.length > 0;
+
+  if (!hasVoi && !hasTornado) {
     panel.classList.remove('visible');
     return;
   }
   panel.classList.add('visible');
 
+  // Show/hide tornado tab based on sensitivity mode
+  const tornadoTab = panel.querySelector<HTMLElement>('[data-tab="tornado"]');
+  if (tornadoTab) tornadoTab.style.display = hasTornado ? '' : 'none';
+
   // VOI tab
   const voiEl = document.getElementById('voi-content')!;
-  if (voiResults && voiResults.length > 0) {
-    const maxVoi = voiResults[0].voi || 0.01;
-    let html = `<div class="panel-title">Observe next for "${sensitivityQuery}"</div>`;
-    for (const r of voiResults.slice(0, 12)) {
+  if (hasVoi) {
+    const queryLabel = selectedNodes.size > 1
+      ? [...selectedNodes].join(', ')
+      : [...selectedNodes][0] ?? '';
+    const maxVoi = voiResults![0].voi || 0.01;
+    let html = `<div class="panel-title">Observe next for ${queryLabel}</div>`;
+    for (const r of voiResults!.slice(0, 12)) {
       const pct = Math.min(100, (r.voi / maxVoi) * 100);
       html += `<div class="voi-row" data-var="${r.variable}" title="VOI: ${r.voi.toFixed(4)} bits&#10;Base entropy: ${r.baseEntropy.toFixed(4)} bits">`;
       html += `<span class="voi-name">${r.variable}</span>`;

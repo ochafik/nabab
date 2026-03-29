@@ -53,6 +53,6 @@ export { sensitivityAnalysis, mostInfluentialParameters, tornadoAnalysis } from 
 export type { AnalyticSensitivityResult } from './analytic-sensitivity.js';
 export { analyticSensitivity, evalCurve, variableInfluenceMap, topInfluentialAnalytic } from './analytic-sensitivity.js';
 export type { VOIResult } from './voi.js';
-export { entropy, valueOfInformation } from './voi.js';
+export { entropy, valueOfInformation, multiQueryVOI } from './voi.js';
 export type { GaussianDistribution, CLGNode } from './gaussian.js';
 export { discretize, learnCLGParameters, inferContinuous } from './gaussian.js';
