@@ -232,22 +232,63 @@ export function createServer(opts: CreateServerOptions = {}): McpServer {
 
   registerAppTool(server, 'query', {
     title: 'Query Bayesian Network',
-    description: 'Query posterior probability distributions given current evidence. Returns an interactive network visualization.',
+    description: 'Query posterior probability distributions. Input: a network source (URL or inline XMLBIF/BIF content) and optional evidence. The viewer loads the network from the input args directly (supports streaming via partial input).',
     inputSchema: z.object({
+      source: z.string().optional().describe('Network source: a file:// or http(s):// URL to a .bif/.xmlbif file, or inline XMLBIF/BIF content. Omit to query the already-loaded network.'),
+      evidence: z.record(z.string()).optional().describe('Evidence to set: { variableName: outcomeValue }'),
       variables: z.array(z.string()).optional().describe('Variable names to query (omit for all)'),
     }),
     _meta: { ui: { resourceUri } },
-  }, async ({ variables }): Promise<CallToolResult> => {
-    if (!currentNetwork) {
-      return { content: [{ type: 'text', text: 'No network loaded. Use load_network first.' }], isError: true };
+  }, async ({ source, evidence: ev, variables }): Promise<CallToolResult> => {
+    // Load network from source if provided
+    if (source) {
+      let content: string;
+      if (/^https?:\/\/|^file:\/\//.test(source)) {
+        // URL — fetch it server-side
+        if (source.startsWith('file://')) {
+          const filePath = decodeURIComponent(source.replace('file://', ''));
+          content = readFileSync(filePath, 'utf-8');
+        } else {
+          const resp = await fetch(source);
+          if (!resp.ok) return { content: [{ type: 'text', text: `Failed to fetch ${source}: ${resp.status}` }], isError: true };
+          content = await resp.text();
+        }
+      } else if (source.includes('<BIF') || source.includes('<NETWORK') || source.trimStart().startsWith('network')) {
+        content = source;
+      } else {
+        // Try as example file name
+        try {
+          content = loadExampleFile(source);
+        } catch {
+          return { content: [{ type: 'text', text: `Unknown source: ${source}` }], isError: true };
+        }
+      }
+      try {
+        currentNetwork = BayesianNetwork.parse(content);
+        currentXmlBif = content;
+        currentEvidence = new Map();
+      } catch (e) {
+        return { content: [{ type: 'text', text: `Parse error: ${e}` }], isError: true };
+      }
     }
+
+    if (!currentNetwork) {
+      return { content: [{ type: 'text', text: 'No network loaded. Provide a source (URL or inline content).' }], isError: true };
+    }
+
+    // Apply evidence if provided
+    if (ev) {
+      for (const [k, v] of Object.entries(ev)) {
+        currentEvidence.set(k, v);
+      }
+    }
+
     const structured = buildQueryResult(variables);
-    // Send XMLBIF so the viewer can run inference locally
     const xmlbif = currentXmlBif ?? toXmlBif(currentNetwork);
     return {
       content: [{ type: 'text', text: formatQueryText(structured) }],
       structuredContent: {
-        xmlbif,
+        source: xmlbif,
         evidence: Object.fromEntries(currentEvidence),
         ...structured,
       } as Record<string, unknown>,

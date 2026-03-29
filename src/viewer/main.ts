@@ -1408,20 +1408,54 @@ async function initMcpApp() {
 
   const app = new App({ name: 'Nabab Network Viewer', version: '1.0.0' });
 
+  /** Try to load a network from tool args (input or partial input). */
+  function tryLoadFromArgs(args: Record<string, unknown> | undefined, partial = false) {
+    if (!args) return;
+    const source = args.source as string | undefined;
+    if (!source) return;
+
+    // For URLs, we can't fetch client-side — wait for the server's tool result
+    if (/^https?:\/\/|^file:\/\//.test(source)) {
+      if (!partial) {
+        document.getElementById('network-name')!.textContent = 'Loading from URL…';
+      }
+      return;
+    }
+
+    // Inline content: try to parse (may be incomplete during streaming)
+    try {
+      loadNetwork(source, true);
+      if (!partial && args.evidence && typeof args.evidence === 'object') {
+        hardEvidence = new Map(Object.entries(args.evidence as Record<string, string>));
+        for (const k of hardEvidence.keys()) observationEnabled.add(k);
+        render();
+      }
+    } catch {
+      // Incomplete XML during streaming — show what we have so far
+      if (partial) {
+        document.getElementById('network-name')!.textContent = 'Streaming network…';
+      }
+    }
+  }
+
+  app.ontoolinputpartial = (params) => {
+    tryLoadFromArgs(params.arguments as Record<string, unknown> | undefined, true);
+  };
+
+  app.ontoolinput = (params) => {
+    tryLoadFromArgs(params.arguments as Record<string, unknown> | undefined, false);
+  };
+
   app.ontoolresult = (result) => {
-    const data = result.structuredContent as { xmlbif?: string; evidence?: Record<string, string> } | undefined;
-    if (data?.xmlbif) {
-      loadNetwork(data.xmlbif, true);
+    const data = result.structuredContent as { source?: string; evidence?: Record<string, string> } | undefined;
+    if (data?.source) {
+      loadNetwork(data.source, true);
       if (data.evidence) {
         hardEvidence = new Map(Object.entries(data.evidence));
         for (const k of hardEvidence.keys()) observationEnabled.add(k);
         render();
       }
     }
-  };
-
-  app.ontoolinput = () => {
-    document.getElementById('network-name')!.textContent = 'Computing…';
   };
 
   app.onhostcontextchanged = (ctx) => {
