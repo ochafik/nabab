@@ -1188,21 +1188,23 @@ function boolSlider(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: V
   // Unified: bar = thumb = display value (evidence when observed, posterior when not)
   const displayW = isObs ? getWeights(v) : new Map(v.outcomes.map(o => [o, dist.get(o) ?? 0]));
   const tr = displayW.get(v.outcomes[0]) ?? 0; // right side = outcomes[0]
+  const rx = 5; // bar corner radius — thumb/snap range is inset by rx
+  const thumbMin = bx + rx, thumbMax = bx + bw - rx, thumbRange = thumbMax - thumbMin;
 
   // Bar background (also a click target to jump the slider)
   const barBg = g.append('rect').attr('x', bx).attr('y', by - 4).attr('width', bw).attr('height', 18)
-    .attr('rx', 5).attr('fill', 'transparent').attr('cursor', 'pointer').attr('class', 'cz');
+    .attr('rx', rx).attr('fill', 'transparent').attr('cursor', 'pointer').attr('class', 'cz');
   g.append('rect').attr('x', bx).attr('y', by).attr('width', bw).attr('height', 10)
-    .attr('rx', 5).attr('fill', 'var(--bg-bar)').attr('pointer-events', 'none');
+    .attr('rx', rx).attr('fill', 'var(--bg-bar)').attr('pointer-events', 'none');
   if (tr > 0.005)
-    g.append('rect').attr('x', bx).attr('y', by).attr('width', Math.max(4, bw * tr)).attr('height', 10)
-      .attr('rx', 5).attr('fill', fillVar).attr('opacity', 0.6).attr('pointer-events', 'none');
+    g.append('rect').attr('x', bx).attr('y', by).attr('width', 2 * rx + thumbRange * tr).attr('height', 10)
+      .attr('rx', rx).attr('fill', fillVar).attr('opacity', 0.6).attr('pointer-events', 'none');
   barBg.on('click', (ev) => {
     ev.stopPropagation();
     const pt = (ev.target as SVGElement).ownerSVGElement!.createSVGPoint();
     pt.x = ev.clientX; pt.y = ev.clientY;
     const local = pt.matrixTransform((ev.target as SVGGraphicsElement).getScreenCTM()!.inverse());
-    setSlider(v, Math.max(0, Math.min(1, (local.x - bx) / bw)));
+    setSlider(v, Math.max(0, Math.min(1, (local.x - thumbMin) / thumbRange)));
   });
 
   // Show outcome labels for non-boolean 2-outcome vars: Cat1 <slider> Cat2
@@ -1217,16 +1219,16 @@ function boolSlider(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: V
 
   // Thumb (click-without-drag = clear when observed)
   const clearObs = () => { hardEvidence.delete(v.name); softEvidence.delete(v.name); observationEnabled.delete(v.name); render(); };
-  addSliderThumb(g, bx + bw * tr, by + 5, 7, fillVar, isObs,
-    () => {}, (x) => setSlider(v, (x - bx) / bw), clearObs, bx, bx + bw);
+  addSliderThumb(g, thumbMin + thumbRange * tr, by + 5, 7, fillVar, isObs,
+    () => {}, (x) => setSlider(v, (x - thumbMin) / thumbRange), clearObs, thumbMin, thumbMax);
 
   // Snap zones at endpoints (only shown when not already snapped there)
   const snappedFalse = isObs && hardEvidence.get(v.name) === v.outcomes[1];
   const snappedTrue = isObs && hardEvidence.get(v.name) === v.outcomes[0];
   addSnapZones(g, bx, by, bw, 10, [
-    { x: bx, label: `Click to observe as ${v.outcomes[1]}`, isSnapped: snappedFalse,
+    { x: thumbMin, label: `Click to observe as ${v.outcomes[1]}`, isSnapped: snappedFalse,
       snap: () => { hardEvidence.set(v.name, v.outcomes[1]); softEvidence.delete(v.name); observationEnabled.add(v.name); render(); } },
-    { x: bx + bw, label: `Click to observe as ${v.outcomes[0]}`, isSnapped: snappedTrue,
+    { x: thumbMax, label: `Click to observe as ${v.outcomes[0]}`, isSnapped: snappedTrue,
       snap: () => { hardEvidence.set(v.name, v.outcomes[0]); softEvidence.delete(v.name); observationEnabled.add(v.name); render(); } },
   ]);
 }
@@ -1275,13 +1277,15 @@ function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Va
       .text(`${pct}%`);
 
     // Bar background (click-to-jump)
+    const mrx = 3; // bar corner radius — thumb/snap inset by mrx
+    const mThumbMin = bx + mrx, mThumbMax = bx + bw - mrx, mThumbRange = mThumbMax - mThumbMin;
     const barHit = g.append('rect').attr('x', bx).attr('y', by - 4).attr('width', bw).attr('height', 14)
       .attr('fill', 'transparent').attr('cursor', 'pointer').attr('class', 'cz');
     g.append('rect').attr('x', bx).attr('y', by).attr('width', bw).attr('height', 6)
-      .attr('rx', 3).attr('fill', 'var(--bg-bar)').attr('pointer-events', 'none');
+      .attr('rx', mrx).attr('fill', 'var(--bg-bar)').attr('pointer-events', 'none');
     if (val > 0.005)
-      g.append('rect').attr('x', bx).attr('y', by).attr('width', Math.max(3, bw * val)).attr('height', 6)
-        .attr('rx', 3).attr('fill', accent).attr('opacity', 0.6).attr('pointer-events', 'none');
+      g.append('rect').attr('x', bx).attr('y', by).attr('width', 2 * mrx + mThumbRange * val).attr('height', 6)
+        .attr('rx', mrx).attr('fill', accent).attr('opacity', 0.6).attr('pointer-events', 'none');
 
     const idx = i;
     barHit.on('click', (ev) => {
@@ -1289,21 +1293,21 @@ function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Va
       const pt = (ev.target as SVGElement).ownerSVGElement!.createSVGPoint();
       pt.x = ev.clientX; pt.y = ev.clientY;
       const local = pt.matrixTransform((ev.target as SVGGraphicsElement).getScreenCTM()!.inverse());
-      setMultiWeight(v, idx, Math.max(0, Math.min(1, (local.x - bx) / bw)));
+      setMultiWeight(v, idx, Math.max(0, Math.min(1, (local.x - mThumbMin) / mThumbRange)));
     });
 
     // Thumb: clear-on-click clears THIS outcome's tweak only (if tweaked)
     const clearThis = isTweaked ? () => clearOutcomeTweak(v, idx) : () => {};
-    addSliderThumb(g, bx + bw * val, by + 3, 5, accent, isTweaked,
-      () => {}, (x) => setMultiWeight(v, idx, (x - bx) / bw), clearThis, bx, bx + bw);
+    addSliderThumb(g, mThumbMin + mThumbRange * val, by + 3, 5, accent, isTweaked,
+      () => {}, (x) => setMultiWeight(v, idx, (x - mThumbMin) / mThumbRange), clearThis, mThumbMin, mThumbMax);
 
     // Snap zones
     const isSnapped100 = isObs && hardEvidence.get(v.name) === o;
     const isSnapped0 = val < 0.01 && isTweaked;
     addSnapZones(g, bx, by, bw, 6, [
-      { x: bx, label: `Click to exclude ${o}`, isSnapped: isSnapped0,
+      { x: mThumbMin, label: `Click to exclude ${o}`, isSnapped: isSnapped0,
         snap: () => setMultiWeight(v, i, 0) },
-      { x: bx + bw, label: `Click to observe as ${o}`, isSnapped: isSnapped100,
+      { x: mThumbMax, label: `Click to observe as ${o}`, isSnapped: isSnapped100,
         snap: () => { hardEvidence.set(v.name, o); softEvidence.delete(v.name); observationEnabled.add(v.name); tweakedOutcomes.set(v.name, new Set(v.outcomes)); render(); } },
     ]);
 

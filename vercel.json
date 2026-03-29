@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
+  "builds": [
+    {
+      "src": "http.ts",
+      "use": "@vercel/node",
+      "config": { "maxDuration": 60 }
+    }
+  ],
+  "routes": [
+    { "src": "/(.*)", "dest": "/http.ts" }
+  ]
+}
