@@ -770,6 +770,8 @@ function render() {
   }
 
   // VOI: compute whenever any node is selected (no sensitivity mode needed)
+  // Query targets = selected nodes (makes sense for both observed and unobserved:
+  // "what else could I observe to learn more about these variables?")
   if (selectedNodes.size > 0) {
     try {
       const ev = he.size > 0 ? he : undefined;
@@ -1498,7 +1500,7 @@ function renderInfoPanel() {
   if (activeInfoTab === 'voi' && hasVoi) {
     const queryLabel = selected.length > 1 ? selected.join(', ') : selected[0];
     const maxVoi = voiResults![0].voi || 0.01;
-    html += `<div class="panel-title">Observe next for ${escapeHtml(queryLabel)}</div>`;
+    html += `<div class="panel-title">Best observations to learn about ${escapeHtml(queryLabel)}</div>`;
     for (const r of voiResults!.slice(0, 15)) {
       const pct = Math.min(100, (r.voi / maxVoi) * 100);
       html += `<div class="voi-row" data-var="${r.variable}" title="VOI: ${r.voi.toFixed(4)} bits\nBase entropy: ${r.baseEntropy.toFixed(4)} bits">`;
