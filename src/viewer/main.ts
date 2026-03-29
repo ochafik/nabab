@@ -1025,21 +1025,18 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
     let dragMoved = false;
     ng.call(d3.drag<SVGGElement, unknown>()
       .filter((ev) => !(ev.target as SVGElement).classList.contains('slider-thumb') && !(ev.target as SVGElement).closest('.cz'))
-      .on('start', (ev) => {
-        dragMoved = false;
-        // Pre-select on mousedown so dragging moves the right set
-        if (!ev.sourceEvent?.shiftKey && !isSel) { selectedNodes.clear(); }
-        selectedNodes.add(v.name);
-      })
+      .on('start', () => { dragMoved = false; })
       .on('drag', (ev) => {
-        dragMoved = true;
-        // Move all selected nodes together
-        const toMove = selectedNodes.has(v.name) && selectedNodes.size > 0 ? [...selectedNodes] : [v.name];
+        if (!dragMoved) {
+          // First drag event: commit selection so the right nodes move
+          dragMoved = true;
+          if (!isSel) { selectedNodes.clear(); selectedNodes.add(v.name); }
+        }
+        const toMove = selectedNodes.has(v.name) ? [...selectedNodes] : [v.name];
         for (const name of toMove) {
           const p = nodePositions.get(name);
           if (p) { p.x += ev.dx; p.y += ev.dy; nodePositions.set(name, { ...p }); }
         }
-        // Update all moved node group transforms
         contentG.selectAll<SVGGElement, unknown>('.node-g').each(function () {
           const gEl = d3.select(this);
           const name = gEl.attr('data-var');
@@ -1050,14 +1047,14 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
         });
         drawEdges(net);
       })
-      .on('end', () => { if (dragMoved) render(); }) // re-render after drag to update edges/state
+      .on('end', () => { if (dragMoved) render(); })
     ).attr('cursor', 'grab');
 
     ng.attr('class', 'node-g').attr('data-var', v.name);
 
-    // Click on node background — only handle pure clicks (not drags)
+    // Click: only fires for non-drag interactions
     ng.on('click', (ev) => {
-      if (dragMoved) return; // was a drag, not a click
+      if (dragMoved) return;
       if ((ev.target as SVGElement).closest('.cz') || (ev.target as SVGElement).classList.contains('slider-thumb')) return;
       selectNode(v.name, ev.shiftKey);
     });
