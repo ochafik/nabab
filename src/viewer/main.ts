@@ -1022,14 +1022,17 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
     }
 
     // Node drag (moves all selected if this node is selected)
+    let dragMoved = false;
     ng.call(d3.drag<SVGGElement, unknown>()
       .filter((ev) => !(ev.target as SVGElement).classList.contains('slider-thumb') && !(ev.target as SVGElement).closest('.cz'))
       .on('start', (ev) => {
-        // Click-to-select (on mousedown, before drag begins)
+        dragMoved = false;
+        // Pre-select on mousedown so dragging moves the right set
         if (!ev.sourceEvent?.shiftKey && !isSel) { selectedNodes.clear(); }
         selectedNodes.add(v.name);
       })
       .on('drag', (ev) => {
+        dragMoved = true;
         // Move all selected nodes together
         const toMove = selectedNodes.has(v.name) && selectedNodes.size > 0 ? [...selectedNodes] : [v.name];
         for (const name of toMove) {
@@ -1047,13 +1050,14 @@ function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distributio
         });
         drawEdges(net);
       })
-      .on('end', () => render()) // re-render to update selection visuals
+      .on('end', () => { if (dragMoved) render(); }) // re-render after drag to update edges/state
     ).attr('cursor', 'grab');
 
     ng.attr('class', 'node-g').attr('data-var', v.name);
 
-    // Click on node background to select (without starting drag)
+    // Click on node background — only handle pure clicks (not drags)
     ng.on('click', (ev) => {
+      if (dragMoved) return; // was a drag, not a click
       if ((ev.target as SVGElement).closest('.cz') || (ev.target as SVGElement).classList.contains('slider-thumb')) return;
       selectNode(v.name, ev.shiftKey);
     });
