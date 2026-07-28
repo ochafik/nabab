@@ -45,7 +45,7 @@ export function createFactor(variables: readonly Variable[], values: Float64Arra
 
 /** Create a constant factor (no variables). */
 export function constantFactor(value: number): Factor {
-  return { variables: [], values: new Float64Array([value]), strides: [] };
+  return { variables: [], values: new Float64Array([value]), strides: new Int32Array(0) };
 }
 
 /** Create a factor from a CPT. Variables order: [...parents, variable]. */

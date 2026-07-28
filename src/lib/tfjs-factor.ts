@@ -112,7 +112,12 @@ export function tfjsMultiplyFactors(f1: Factor, f2: Factor): Factor {
   // We must transpose it to align with the union, then reshape to add
   // size-1 dimensions for missing variables.
 
-  return tf.tidy(() => {
+  // tidy() returns a TensorContainer; a Factor is not one, so we let the
+  // callback return void (intermediate tensors are still all disposed) and
+  // capture the Factor result via an outer binding. tensorToFactor already
+  // copies data out with dataSync() before the tensors are disposed.
+  let out!: Factor;
+  tf.tidy(() => {
     const t1src = factorToTensor(f1).tensor;
     const t2src = factorToTensor(f2).tensor;
 
@@ -126,8 +131,9 @@ export function tfjsMultiplyFactors(f1: Factor, f2: Factor): Factor {
     const product = tf.mul(t1, t2);
     // product has shape = unionShape (after broadcast)
     const result = tf.reshape(product, unionShape);
-    return tensorToFactor(result, unionVars);
+    out = tensorToFactor(result, unionVars);
   });
+  return out;
 }
 
 /**
@@ -183,13 +189,17 @@ export function tfjsMarginalize(factor: Factor, varsToRemove: readonly Variable[
   const remaining = factor.variables.filter(v => !removeSet.has(v));
 
   if (remaining.length === 0) {
-    // Sum everything
-    return tf.tidy(() => {
+    // Sum everything. tidy() returns a TensorContainer, not a Factor, so we
+    // capture the result via an outer binding and let the callback return void
+    // (all intermediate tensors are still disposed).
+    let out!: Factor;
+    tf.tidy(() => {
       const t = factorToTensor(factor).tensor;
       const total = tf.sum(t);
       const val = total.dataSync()[0];
-      return createFactor([], new Float64Array([val]));
+      out = createFactor([], new Float64Array([val]));
     });
+    return out;
   }
 
   // Find axes to sum over
@@ -197,9 +207,13 @@ export function tfjsMarginalize(factor: Factor, varsToRemove: readonly Variable[
     .map((v, i) => removeSet.has(v) ? i : -1)
     .filter(i => i >= 0);
 
-  return tf.tidy(() => {
+  // tidy() returns a TensorContainer, not a Factor; capture via an outer
+  // binding and let the callback return void (intermediates still disposed).
+  let out!: Factor;
+  tf.tidy(() => {
     const t = factorToTensor(factor).tensor;
     const summed = tf.sum(t, axesToSum);
-    return tensorToFactor(summed, remaining);
+    out = tensorToFactor(summed, remaining);
   });
+  return out;
 }

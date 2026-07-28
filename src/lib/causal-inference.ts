@@ -77,7 +77,9 @@ export function mutilateNetwork(
 
   return new BayesianNetwork({
     name: network.name,
-    variables: network.variables,
+    // ParsedNetwork wants a mutable Variable[]; network.variables is readonly.
+    // Copy into a fresh mutable array (variables themselves are shared, immutable).
+    variables: [...network.variables],
     cpts: newCpts,
   });
 }
