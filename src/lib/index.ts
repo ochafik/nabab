@@ -15,16 +15,29 @@ export {
   extractDistribution,
   tableSize,
 } from './factor.js';
-export type { DirectedGraph, UndirectedGraph, Clique, JunctionTree } from './graph.js';
+export type {
+  DirectedGraph,
+  UndirectedGraph,
+  Clique,
+  JunctionTree,
+  JunctionTreeOptions,
+  EliminationHeuristic,
+  EliminationResult,
+  CostEstimate,
+} from './graph.js';
 export {
   buildDirectedGraph,
   moralize,
   triangulate,
+  eliminate,
   findMaximalCliques,
   buildJunctionTree,
+  cliqueTableEntries,
+  junctionTreeCost,
+  estimateJunctionTreeCost,
 } from './graph.js';
-export type { InferenceResult } from './inference.js';
-export { infer } from './inference.js';
+export type { InferenceResult, InferOptions } from './inference.js';
+export { infer, estimateInferenceCost, DEFAULT_MAX_CLIQUE_ENTRIES } from './inference.js';
 export type { ParsedNetwork } from './xmlbif-parser.js';
 export { parseXmlBif } from './xmlbif-parser.js';
 export { parseBif } from './bif-parser.js';

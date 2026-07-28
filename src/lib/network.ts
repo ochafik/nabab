@@ -2,7 +2,8 @@
  * BayesianNetwork: combines structure with inference.
  */
 import type { Variable, CPT, Evidence, LikelihoodEvidence, Distribution } from './types.js';
-import { infer, type InferenceResult } from './inference.js';
+import { infer, estimateInferenceCost, type InferenceResult, type InferOptions } from './inference.js';
+import type { CostEstimate } from './graph.js';
 import { parseXmlBif, type ParsedNetwork } from './xmlbif-parser.js';
 import { parseBif } from './bif-parser.js';
 
@@ -64,8 +65,16 @@ export class BayesianNetwork {
    * Supports both hard evidence (variable=outcome) and soft/likelihood
    * evidence (variable -> outcome weights).
    */
-  infer(evidence?: Evidence, likelihoodEvidence?: LikelihoodEvidence): InferenceResult {
-    return infer(this.variables, this.cpts, evidence, likelihoodEvidence);
+  infer(evidence?: Evidence, likelihoodEvidence?: LikelihoodEvidence, options?: InferOptions): InferenceResult {
+    return infer(this.variables, this.cpts, evidence, likelihoodEvidence, options);
+  }
+
+  /**
+   * Estimate the cost of exact inference (treewidth, largest clique table size)
+   * without running it or allocating any tables. Useful for gating.
+   */
+  estimateInferenceCost(): CostEstimate {
+    return estimateInferenceCost(this.variables, this.cpts);
   }
 
   /** Get the prior distributions (no evidence). */

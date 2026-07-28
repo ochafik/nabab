@@ -72,74 +72,167 @@ export function moralize(dag: DirectedGraph): UndirectedGraph {
 // ─── Triangulation ───────────────────────────────────────────────────
 
 /**
- * Triangulate an undirected graph using min-fill elimination ordering.
- * For each candidate vertex, count how many fill edges its elimination would
- * add (pairs of remaining neighbors not already connected). Pick the vertex
- * with the fewest fills; break ties by minimum degree. This produces smaller
- * cliques and lower treewidth than simple minimum-degree ordering.
+ * Elimination-ordering heuristic used to triangulate the moral graph.
+ * - 'min-fill'   : eliminate the vertex whose elimination adds the fewest
+ *                  fill edges (default; best quality). Ties broken by
+ *                  min-degree, then variable name for determinism.
+ * - 'min-degree' : eliminate the lowest-degree live vertex (cheaper to compute).
+ * - 'input-order': eliminate in the graph's vertex insertion order — no
+ *                  heuristic; provided as a worst-case baseline for benchmarking.
  */
-export function triangulate(graph: UndirectedGraph): UndirectedGraph {
-  // Work on a mutable copy of the adjacency structure
-  const elimNeighbors = new Map<Variable, Set<Variable>>();
-  for (const [v, ns] of graph.neighbors) elimNeighbors.set(v, new Set(ns));
+export type EliminationHeuristic = 'min-fill' | 'min-degree' | 'input-order';
 
-  // Collect fill-in edges
+export interface EliminationResult {
+  /** The order in which vertices were eliminated. */
+  readonly order: Variable[];
+  /**
+   * Fill-in edges added during elimination. The union of these with the
+   * original graph's edges is a chordal (triangulated) graph.
+   */
+  readonly fillEdges: Array<[Variable, Variable]>;
+  /**
+   * Induced width of this ordering = (largest elimination clique size − 1).
+   * This is the realized treewidth for this particular ordering.
+   */
+  readonly inducedWidth: number;
+  /**
+   * The elimination clique with the most table entries (product of member
+   * cardinalities). Equals the largest maximal clique of the triangulated graph,
+   * so this — and `maxCliqueEntries` below — are exact, computed WITHOUT
+   * enumerating maximal cliques (which can blow up on high-treewidth graphs).
+   */
+  readonly largestClique: Variable[];
+  /** Table entries of `largestClique` = product of member cardinalities. */
+  readonly maxCliqueEntries: number;
+  /** Sum of table entries over every elimination clique (a cost/work proxy). */
+  readonly totalCliqueEntries: number;
+}
+
+/**
+ * Run a correct greedy elimination on a *copy* of the graph, accumulating
+ * fill-in edges. When a vertex is eliminated, all of its still-live neighbours
+ * are connected pairwise; any missing edges become fill-in that persists and
+ * influences later elimination steps (this is what makes it a valid
+ * triangulation, unlike a single static "marry each vertex's neighbours" pass).
+ *
+ * Deterministic: the same input graph always yields the same ordering.
+ */
+export function eliminate(
+  graph: UndirectedGraph,
+  heuristic: EliminationHeuristic = 'min-fill',
+): EliminationResult {
+  // Mutable working adjacency (copy so the caller's graph is untouched).
+  const adj = new Map<Variable, Set<Variable>>();
+  for (const [v, ns] of graph.neighbors) adj.set(v, new Set(ns));
+
   const fillEdges: Array<[Variable, Variable]> = [];
+  const order: Variable[] = [];
   const remaining = new Set(graph.vertices);
+  let inducedWidth = 0;
+  let largestClique: Variable[] = [];
+  let maxCliqueEntries = 0;
+  let totalCliqueEntries = 0;
+
+  // Cursor for the 'input-order' baseline.
+  const inputOrder = graph.vertices;
+  let inputCursor = 0;
 
   while (remaining.size > 0) {
-    // Pick vertex with minimum fill count; break ties by minimum degree
-    let bestFill = Infinity;
-    let bestDeg = Infinity;
     let bestV: Variable | null = null;
 
-    for (const v of remaining) {
-      const vNeighbors = elimNeighbors.get(v)!;
-      // Collect remaining neighbors
-      const ns: Variable[] = [];
-      for (const n of vNeighbors) {
-        if (remaining.has(n)) ns.push(n);
+    if (heuristic === 'input-order') {
+      while (inputCursor < inputOrder.length && !remaining.has(inputOrder[inputCursor])) {
+        inputCursor++;
       }
-      // Count fill edges that would be added
-      let fill = 0;
-      for (let i = 0; i < ns.length; i++) {
-        const niAdj = elimNeighbors.get(ns[i])!;
-        for (let j = i + 1; j < ns.length; j++) {
-          if (!niAdj.has(ns[j])) fill++;
+      bestV = inputOrder[inputCursor] ?? null;
+    } else {
+      let bestScore = Infinity;
+      let bestDeg = Infinity;
+      for (const v of remaining) {
+        // Live neighbours of v
+        const ns: Variable[] = [];
+        for (const n of adj.get(v)!) {
+          if (remaining.has(n)) ns.push(n);
+        }
+        const deg = ns.length;
+
+        let score: number;
+        if (heuristic === 'min-degree') {
+          score = deg;
+        } else {
+          // min-fill: count neighbour pairs not yet connected
+          let fill = 0;
+          for (let i = 0; i < ns.length; i++) {
+            const ai = adj.get(ns[i])!;
+            for (let j = i + 1; j < ns.length; j++) {
+              if (!ai.has(ns[j])) fill++;
+            }
+          }
+          score = fill;
+        }
+
+        // Deterministic tie-break: score, then degree, then variable name.
+        if (
+          score < bestScore ||
+          (score === bestScore && deg < bestDeg) ||
+          (score === bestScore && deg === bestDeg && bestV !== null && v.name < bestV.name)
+        ) {
+          bestScore = score;
+          bestDeg = deg;
+          bestV = v;
         }
       }
-      const deg = ns.length;
-      if (fill < bestFill || (fill === bestFill && deg < bestDeg)) {
-        bestFill = fill;
-        bestDeg = deg;
-        bestV = v;
-      }
     }
+
     if (!bestV) break;
 
-    // Connect all remaining neighbors of bestV (fill-in)
-    const ns = [...elimNeighbors.get(bestV)!].filter(n => remaining.has(n));
+    // Clique formed at this step = {bestV} ∪ live neighbours.
+    const ns = [...adj.get(bestV)!].filter(n => remaining.has(n));
+    if (ns.length > inducedWidth) inducedWidth = ns.length; // = clique size − 1
+
+    // Track clique-table cost (product of member cardinalities).
+    let entries = bestV.outcomes.length;
+    for (const n of ns) entries *= n.outcomes.length;
+    totalCliqueEntries += entries;
+    if (entries > maxCliqueEntries) {
+      maxCliqueEntries = entries;
+      largestClique = [bestV, ...ns];
+    }
+
+    // Connect all live neighbours pairwise (persistent fill-in).
     for (let i = 0; i < ns.length; i++) {
+      const ai = adj.get(ns[i])!;
       for (let j = i + 1; j < ns.length; j++) {
-        if (!elimNeighbors.get(ns[i])!.has(ns[j])) {
+        if (!ai.has(ns[j])) {
           fillEdges.push([ns[i], ns[j]]);
-          elimNeighbors.get(ns[i])!.add(ns[j]);
-          elimNeighbors.get(ns[j])!.add(ns[i]);
+          ai.add(ns[j]);
+          adj.get(ns[j])!.add(ns[i]);
         }
       }
     }
 
-    // Eliminate vertex
     remaining.delete(bestV);
+    order.push(bestV);
   }
 
-  // Build result: original graph + fill-in edges
+  return { order, fillEdges, inducedWidth, largestClique, maxCliqueEntries, totalCliqueEntries };
+}
+
+/**
+ * Triangulate (chordalize) an undirected graph via greedy elimination.
+ * Returns the original graph plus all fill-in edges. The default heuristic is
+ * min-fill, which tends to produce the smallest cliques / lowest treewidth.
+ */
+export function triangulate(
+  graph: UndirectedGraph,
+  heuristic: EliminationHeuristic = 'min-fill',
+): UndirectedGraph {
+  const { fillEdges } = eliminate(graph, heuristic);
   const neighbors = new Map<Variable, Set<Variable>>();
   for (const [v, ns] of graph.neighbors) neighbors.set(v, new Set(ns));
   for (const [a, b] of fillEdges) {
     addUndirectedEdge(neighbors, a, b);
   }
-
   return { vertices: graph.vertices, neighbors };
 }
 
@@ -199,10 +292,15 @@ export interface JunctionTree {
   readonly neighbors: Map<number, Set<number>>;
 }
 
+export interface JunctionTreeOptions {
+  /** Elimination heuristic used for triangulation (default 'min-fill'). */
+  readonly heuristic?: EliminationHeuristic;
+}
+
 /** Build a junction tree from a directed Bayesian network graph. */
-export function buildJunctionTree(dag: DirectedGraph): JunctionTree {
+export function buildJunctionTree(dag: DirectedGraph, options?: JunctionTreeOptions): JunctionTree {
   const moral = moralize(dag);
-  const triangulated = triangulate(moral);
+  const triangulated = triangulate(moral, options?.heuristic ?? 'min-fill');
   const cliques = findMaximalCliques(triangulated);
 
   if (cliques.length === 0) {
@@ -260,4 +358,78 @@ export function buildJunctionTree(dag: DirectedGraph): JunctionTree {
   }
 
   return { cliques, neighbors: treeNeighbors };
+}
+
+// ─── Cost estimation (structure-only; no inference / no allocation) ──
+
+export interface CostEstimate {
+  /** Realized treewidth = size of the largest clique − 1. */
+  readonly treewidth: number;
+  /** Number of variables in the largest clique. */
+  readonly maxCliqueSize: number;
+  /** Entries in the largest clique table = product of its members' cardinalities. */
+  readonly maxCliqueEntries: number;
+  /** Sum of clique-table entries over all cliques (proxy for total work/memory). */
+  readonly totalCliqueEntries: number;
+  /** The largest clique by table size (drives peak memory); handy for diagnostics. */
+  readonly largestClique: Clique;
+  /** Number of cliques in the junction tree. */
+  readonly numCliques: number;
+}
+
+/** Number of table entries for a clique = product of its members' cardinalities. */
+export function cliqueTableEntries(clique: Clique): number {
+  let n = 1;
+  for (const v of clique) n *= v.outcomes.length;
+  return n;
+}
+
+/** Compute a cost estimate from an already-built junction tree. */
+export function junctionTreeCost(jt: JunctionTree): CostEstimate {
+  let maxCliqueSize = 0;
+  let maxCliqueEntries = 0;
+  let totalCliqueEntries = 0;
+  let largestClique: Clique = [];
+  for (const clique of jt.cliques) {
+    const entries = cliqueTableEntries(clique);
+    totalCliqueEntries += entries;
+    if (entries > maxCliqueEntries) {
+      maxCliqueEntries = entries;
+      largestClique = clique;
+    }
+    if (clique.length > maxCliqueSize) maxCliqueSize = clique.length;
+  }
+  return {
+    treewidth: Math.max(0, maxCliqueSize - 1),
+    maxCliqueSize,
+    maxCliqueEntries,
+    totalCliqueEntries,
+    largestClique,
+    numCliques: jt.cliques.length,
+  };
+}
+
+/**
+ * Estimate junction-tree inference cost for a directed network *without*
+ * running inference, allocating any clique tables, or even enumerating maximal
+ * cliques (which can itself blow up on high-treewidth graphs). Computed directly
+ * from the greedy elimination, so it stays fast even on intractable networks —
+ * exactly what a downstream gate needs to reject them cheaply.
+ *
+ * `treewidth`, `maxCliqueSize`, `maxCliqueEntries` and `largestClique` are exact
+ * (the largest elimination clique is the largest maximal clique). `numCliques`
+ * counts elimination cliques (= variables) and `totalCliqueEntries` sums over
+ * them, so both are proxies (upper bounds) rather than junction-tree-exact.
+ */
+export function estimateJunctionTreeCost(dag: DirectedGraph, options?: JunctionTreeOptions): CostEstimate {
+  const moral = moralize(dag);
+  const e = eliminate(moral, options?.heuristic ?? 'min-fill');
+  return {
+    treewidth: e.inducedWidth,
+    maxCliqueSize: e.largestClique.length,
+    maxCliqueEntries: e.maxCliqueEntries,
+    totalCliqueEntries: e.totalCliqueEntries,
+    largestClique: e.largestClique,
+    numCliques: e.order.length,
+  };
 }
