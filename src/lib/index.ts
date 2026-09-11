@@ -80,3 +80,5 @@ export {
 } from './sampling.js';
 export type { Explanation } from './mpe.js';
 export { mostProbableExplanation, kBestExplanations } from './mpe.js';
+export type { GateClause, LogOddsShift, GatedLogisticCPTOptions, NoisyOrCPTOptions } from './cpt-templates.js';
+export { gatedLogisticCPT, noisyOrCPT } from './cpt-templates.js';
