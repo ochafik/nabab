@@ -82,3 +82,15 @@ export type { Explanation } from './mpe.js';
 export { mostProbableExplanation, kBestExplanations } from './mpe.js';
 export type { GateClause, LogOddsShift, GatedLogisticCPTOptions, NoisyOrCPTOptions } from './cpt-templates.js';
 export { gatedLogisticCPT, noisyOrCPT } from './cpt-templates.js';
+export type { TemporalVariableOptions, HazardPriorOptions, DelayShiftsOptions } from './temporal.js';
+export {
+  TEMPORAL_SEPARATOR,
+  DEFAULT_NULL_OUTCOME,
+  temporalOutcome,
+  parseTemporalOutcome,
+  bucketIndex,
+  temporalVariable,
+  hazardPrior,
+  priorCPT,
+  delayShifts,
+} from './temporal.js';
