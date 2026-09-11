@@ -69,3 +69,12 @@ export type { VOIResult } from './voi.js';
 export { entropy, valueOfInformation, multiQueryVOI } from './voi.js';
 export type { GaussianDistribution, CLGNode } from './gaussian.js';
 export { discretize, learnCLGParameters, inferContinuous } from './gaussian.js';
+export type { SamplingOptions, SampleColumn, SampleResult } from './sampling.js';
+export {
+  mulberry32,
+  topologicalOrder,
+  forwardSample,
+  likelihoodWeighting,
+  sampledMarginals,
+  sampleColumnIndex,
+} from './sampling.js';
