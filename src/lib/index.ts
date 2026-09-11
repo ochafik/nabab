@@ -94,3 +94,5 @@ export {
   priorCPT,
   delayShifts,
 } from './temporal.js';
+export type { InformationGainEntry, CriticalityEntry } from './sample-voi.js';
+export { sampledMutualInformation, sampledInformationGainRanking, sampledCriticality } from './sample-voi.js';
