@@ -78,3 +78,5 @@ export {
   sampledMarginals,
   sampleColumnIndex,
 } from './sampling.js';
+export type { Explanation } from './mpe.js';
+export { mostProbableExplanation, kBestExplanations } from './mpe.js';
