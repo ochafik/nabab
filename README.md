@@ -131,6 +131,90 @@ const parsed = parseBif(bifFileContent);
 const network = new BayesianNetwork(parsed);
 ```
 
+### Sampling, MPE / k-best, CPT templates, temporal nodes
+
+**Monte-Carlo sampling** (seeded, column-major samples; `likelihoodWeighting` clamps hard
+evidence and weights by likelihood evidence):
+
+```typescript
+import { forwardSample, likelihoodWeighting, sampledMarginals } from 'nabab';
+
+const prior = forwardSample(network.variables, network.cpts, 20000, { seed: 42 });
+const post = likelihoodWeighting(
+  network.variables, network.cpts,
+  new Map([['dysp', 'yes']]),                       // hard evidence
+  new Map([['xray', new Map([['yes', 0.9], ['no', 0.2]])]]), // likelihood evidence
+  20000, { seed: 42 },
+);
+sampledMarginals(post, 'lung');   // Distribution
+sampledMarginals(post);           // Map<Variable, Distribution>
+// post.columns[i][s] = outcome index of post.variables[i] in sample s; post.weights[s] its weight
+```
+
+**Most probable explanation and k-best** (max-product variable elimination with traceback;
+k-best by Lawler/Nilsson constraint splitting, constraints expressed as zero likelihood weights):
+
+```typescript
+import { mostProbableExplanation, kBestExplanations } from 'nabab';
+
+const mpe = mostProbableExplanation(network.variables, network.cpts, new Map([['dysp', 'yes']]));
+mpe.assignment;      // Map<string, string> over ALL variables
+mpe.logProbability;  // ln P(assignment, evidence) — joint, not normalised by P(e)
+
+const top = kBestExplanations(network.variables, network.cpts, 10, new Map([['dysp', 'yes']]));
+// descending logProbability; disjoint assignments; ≤ k if evidence leaves fewer
+```
+
+**Templated CPTs** — build tables from O(#parents) parameters instead of the full Cartesian
+product. `gatedLogisticCPT`: a hard CNF gate (AND of OR-groups over parent outcomes) forces the
+null outcome when unsatisfied; otherwise `softmax(log base + Σ applicable log-odds shifts)`.
+`noisyOrCPT` is the classic binary noisy-OR.
+
+```typescript
+import { gatedLogisticCPT, noisyOrCPT } from 'nabab';
+
+const cpt = gatedLogisticCPT({
+  variable: outcome,           // outcomes ['none', 'partial', 'full']
+  parents: [prereq, support],
+  gate: [[{ parent: 'prereq', outcomes: ['done'] }]],       // prereq must be done
+  base: [0.5, 0.3, 0.2],                                    // prior when the gate holds
+  shifts: [{ parent: 'support', outcome: 'strong', logOdds: [0, 0, 1.5] }], // or a sparse Map
+});
+const alarm = noisyOrCPT({ variable: alarmVar, parents: [burglary, earthquake], leak: 0.001, weights: [0.94, 0.29] });
+```
+
+**Temporal nodes** — "time as a bucketed outcome": one variable per event whose outcomes are
+`[none, o₁@b₁, o₁@b₂, …]`. `hazardPrior` spreads `pOccur` over outcomes × buckets;
+`delayShifts` encodes "child resolves ≥ `delay` buckets after the parent" as `-Infinity`
+shifts for `gatedLogisticCPT`.
+
+```typescript
+import { temporalVariable, hazardPrior, priorCPT, delayShifts, parseTemporalOutcome, bucketIndex } from 'nabab';
+
+const buckets = ['Q1-27', 'Q2-27', 'H2-27', '2028'];
+const P = temporalVariable({ name: 'ceasefire', outcomes: ['partial', 'full'], buckets });
+const C = temporalVariable({ name: 'elections', outcomes: ['held'], buckets });
+const pCpt = priorCPT(P, hazardPrior({ outcomes: new Map([['partial', 0.6], ['full', 0.4]]), pOccur: 0.7, buckets, hazard: [1, 2, 2, 1] }));
+const cCpt = gatedLogisticCPT({
+  variable: C, parents: [P],
+  gate: [[{ parent: 'ceasefire', outcomes: P.outcomes.filter(o => o !== 'none') }]], // needs a ceasefire
+  base: hazardPrior({ outcomes: new Map([['held', 1]]), pOccur: 0.8, buckets, hazard: [1, 1, 1, 1] }),
+  shifts: delayShifts({ parent: P, child: C, buckets, delay: 1 }),                    // ≥ 1 bucket later
+});
+parseTemporalOutcome('full@H2-27'); // { outcome: 'full', bucket: 'H2-27' }
+bucketIndex(buckets, 'H2-27');      // 2
+```
+
+**Sample-based VOI** — information gain and criticality from a sample result, no inference
+(`sampledMutualInformation(result, A, [B…])` is exactly `valueOfInformation` when B is a single target):
+
+```typescript
+import { sampledInformationGainRanking, sampledCriticality } from 'nabab';
+
+sampledInformationGainRanking(post, candidateNames, ['elections']); // [{ variable, bits }] descending
+sampledCriticality(post, candidateNames, 'elections', 'held@2028');  // drop in P(target) when candidate = null
+```
+
 ## Viewer
 
 The interactive viewer (`npm run dev`) provides:
@@ -239,7 +323,7 @@ src/viewer/             -- Interactive web viewer
 src/mcp/                -- MCP server for LLM integration
   server.ts             -- Stdio-based MCP server (load, query, evidence tools)
 
-test/                   -- Vitest test suite (121 tests)
+test/                   -- Vitest test suite (542 tests)
 bench/                  -- Benchmark runner and 17 bnlearn models
   models/               -- .bif files (asia, alarm, sachs, child, etc.)
   run-bench.ts          -- Benchmark runner
@@ -275,6 +359,11 @@ Key exports from `nabab` (via `src/lib/index.ts`):
 - **`parseBif(content)`** -- parse BIF format
 - **`buildJunctionTree(dag)`** -- build junction tree from directed graph
 - **`createFactor(variables, values)`**, **`multiplyFactors(f1, f2)`**, **`marginalize(factor, vars)`** -- factor operations
+- **`forwardSample(variables, cpts, n, opts?)`**, **`likelihoodWeighting(variables, cpts, evidence?, likelihoodEvidence?, n, opts?)`**, **`sampledMarginals(result, variable?)`** -- seeded Monte-Carlo sampling
+- **`mostProbableExplanation(variables, cpts, evidence?, likelihoodEvidence?)`**, **`kBestExplanations(variables, cpts, k, evidence?, likelihoodEvidence?)`** -- max-product MPE and k-best
+- **`gatedLogisticCPT(opts)`**, **`noisyOrCPT(opts)`** -- templated CPT construction
+- **`temporalVariable(opts)`**, **`hazardPrior(opts)`**, **`priorCPT(variable, dist)`**, **`delayShifts(opts)`**, **`parseTemporalOutcome(s)`**, **`bucketIndex(buckets, bucket)`** -- temporal nodes
+- **`sampledMutualInformation(result, a, bs)`**, **`sampledInformationGainRanking(result, candidates, targets)`**, **`sampledCriticality(result, candidates, target, outcome, nullOf?)`** -- sample-based VOI
 
 ### Types
 
@@ -285,6 +374,8 @@ Key exports from `nabab` (via `src/lib/index.ts`):
 - `Distribution` -- `Map<string, number>`
 - `Factor` -- `{ variables, values: Float64Array, strides }`
 - `InferenceResult` -- `{ posteriors, junctionTree, cliquePotentials }`
+- `SampleResult` -- `{ variables, n, columns, weights, totalWeight }` (column-major samples)
+- `Explanation` -- `{ assignment: Map<string, string>, logProbability }`
 
 ## Contributing
 
