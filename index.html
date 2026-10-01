@@ -92,6 +92,7 @@
     .toolbar button:hover { background: var(--border); }
     .toolbar button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
     .toolbar .hint { font-size: 11px; color: var(--text-dim); }
+    .toolbar .hint a { color: var(--accent); }
     #graph-container {
       flex: 1;
       overflow: hidden;
@@ -271,7 +272,7 @@
         <button id="btn-export-json">Export JSON</button>
       </span>
     </span>
-    <span class="hint">Click name to cycle | Drag slider for soft evidence | Eye toggles | Drop .xml/.bif files to load | Drop .csv to learn structure</span>
+    <span class="hint">Click name to cycle | Drag slider for soft evidence | Eye toggles | Drop .xml/.bif files to load | Drop .csv to learn structure | <a href="/help">MCP server</a></span>
   </div>
   <div id="graph-container"></div>
   <div id="info-panel">

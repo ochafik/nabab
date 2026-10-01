@@ -16,8 +16,8 @@
   ],
   "scripts": {
     "dev": "vite",
-    "build": "vite build && tsc --project tsconfig.lib.json",
-    "build:viewer": "vite build",
+    "build": "vite build && node scripts/copy-viewer-assets.mjs && tsc --project tsconfig.lib.json",
+    "build:viewer": "vite build && node scripts/copy-viewer-assets.mjs",
     "build:lib": "tsc --project tsconfig.lib.json",
     "preview": "vite preview",
     "lint": "eslint src test",
@@ -25,7 +25,7 @@
     "test:watch": "vitest",
     "build:mcp": "vite build --config vite.config.mcp.ts",
     "mcp": "tsx src/mcp/node.ts",
-    "deploy:mcp": "npm run build:mcp && wrangler deploy"
+    "deploy": "npm run build:viewer && npm run build:mcp && wrangler deploy"
   },
   "license": "MIT",
   "author": "Olivier Chafik",

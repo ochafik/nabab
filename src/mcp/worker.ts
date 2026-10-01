@@ -8,7 +8,7 @@
  * sessions and server→viewer commands survive Cloudflare's edge load
  * balancing (no Redis needed).
  *
- * Deploy: npm run deploy:mcp   (builds the MCP App viewer, then wrangler deploy)
+ * Deploy: npm run deploy   (builds the viewer + MCP App, then wrangler deploy)
  */
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
@@ -113,25 +113,30 @@ async function handleMcp(
   return jsonRpcError(sessionId ? 404 : 400, -32001, message);
 }
 
-// ─── Landing page ───────────────────────────────────────────────────
+// ─── Help page ──────────────────────────────────────────────────────
 
-function landing(request: Request): Response {
+function helpPage(request: Request, status = 200): Response {
   const baseUrl = new URL(request.url).origin;
   const html = `<!DOCTYPE html>
-<html><body style="font-family:system-ui,sans-serif;max-width:600px;margin:50px auto;padding:0 20px">
-<h1>Nabab MCP Server</h1>
-<p>Bayesian network inference engine with interactive MCP App viewer.</p>
-<h2>Install</h2>
-<p>HTTP transport (this deployment):</p>
-<pre style="background:#f4f4f4;padding:12px;border-radius:6px">claude mcp add --transport http nabab ${baseUrl}/mcp</pre>
+<html><body style="font-family:system-ui,sans-serif;max-width:640px;margin:50px auto;padding:0 20px">
+<h1>Nabab</h1>
+<p>Bayesian network inference engine with an interactive viewer.</p>
+<h2>Web viewer</h2>
+<p><a href="${baseUrl}/">${baseUrl}/</a> — load examples, set evidence, drag-drop networks.</p>
+<h2>MCP server</h2>
+<p>Streamable HTTP endpoint:</p>
+<pre style="background:#f4f4f4;padding:12px;border-radius:6px;white-space:pre-wrap">claude mcp add --transport http nabab ${baseUrl}/mcp</pre>
+<p>Or point any MCP client at <code>${baseUrl}/mcp</code>.</p>
 <p>stdio transport (local):</p>
 <pre style="background:#f4f4f4;padding:12px;border-radius:6px">cd /path/to/nabab && npm run build:mcp && npm run mcp -- --stdio</pre>
-<p style="color:#888;font-size:0.9em">Sessions &amp; queue: Durable Object &middot; Endpoint: <code>${baseUrl}/mcp</code></p>
+<p style="color:#888;font-size:0.9em">Sessions &amp; command queue: Durable Object &middot; Endpoint: <code>${baseUrl}/mcp</code></p>
 </body></html>`;
-  return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+  return new Response(html, { status, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 }
 
 // ─── Worker router ──────────────────────────────────────────────────
+// Static assets (the web viewer) are served before the Worker runs; the
+// Worker only sees paths that match no asset.
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -140,7 +145,7 @@ export default {
       const stub = env.NB.get(env.NB.idFromName('mcp'));
       return stub.fetch(request);
     }
-    if (pathname === '/') return landing(request);
-    return new Response('Not found', { status: 404 });
+    if (pathname === '/' || pathname === '/help') return helpPage(request);
+    return helpPage(request, 404);
   },
 };
