@@ -1,0 +1,766 @@
+/**
+ * Graph rendering: the d3/SVG network view, node sliders, layout and the
+ * render() orchestrator (inference + sensitivity/VOI + persistence).
+ */
+import * as d3 from 'd3';
+import dagre from '@dagrejs/dagre';
+import { analyticSensitivity, variableInfluenceMap } from '../lib/analytic-sensitivity.js';
+import { multiQueryVOI } from '../lib/voi.js';
+import type { Variable, Distribution } from '../lib/types.js';
+import { BayesianNetwork } from '../lib/network.js';
+import { S, IS_MCP } from './state.js';
+import {
+  effectiveEvidence, getWeights, toggleEye, eyeTooltip, cycleObservation,
+  setSlider, cycleOutcome, setMultiWeight, clearOutcomeTweak,
+} from './evidence.js';
+import { selectNode, clearSelection } from './selection.js';
+import { renderInfoPanel } from './info-panel.js';
+import { saveStateToHash, saveStateToLocalStorage } from './persistence.js';
+
+const ARR_LEN = 7; // rendered arrowhead length in px
+
+// Material Design icon paths (24x24 viewBox)
+const ICON_VIS = 'M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z';
+const ICON_VIS_OFF = 'M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z';
+
+const NODE_W_MIN = 140;
+const NODE_PAD = 48; // eye icon (28) + margins (20)
+const NODE_H_BOOL = 56;
+const NODE_H_BOOL_LABELS = 68;
+const NODE_H_MULTI_BASE = 30;
+const NODE_H_PER_OUTCOME = 24;
+
+const BOOL_PATTERNS = /^(true|false|yes|no|t|f|y|n)$/i;
+
+function isBoolVar(v: Variable): boolean {
+  return v.outcomes.length === 2 && BOOL_PATTERNS.test(v.outcomes[0]) && BOOL_PATTERNS.test(v.outcomes[1]);
+}
+
+function isSliderVar(v: Variable): boolean {
+  return v.outcomes.length === 2;
+}
+
+// Measured text widths — populated at start of each render
+let _measuredWidths = new Map<string, number>();
+
+/** Measure actual SVG text widths for all variables. */
+function measureTextWidths(
+  svg: d3.Selection<SVGSVGElement, unknown, null, undefined>,
+  net: BayesianNetwork,
+  posteriors: Map<Variable, Distribution>,
+) {
+  _measuredWidths = new Map();
+  const measureG = svg.append('g').attr('opacity', 0);
+
+  for (const v of net.variables) {
+    const dist = posteriors.get(v);
+    // Measure header text
+    let headerText = v.name;
+    if (dist && isSliderVar(v)) {
+      // Measure worst case: longest outcome name + "100%"
+      const longest = v.outcomes[0].length > v.outcomes[1].length ? v.outcomes[0] : v.outcomes[1];
+      headerText += `: 100% ${longest}`;
+    } else if (dist) {
+      const longest = v.outcomes.reduce((a, b) => a.length > b.length ? a : b);
+      headerText += `: 100% ${longest}`;
+    }
+    const headerEl = measureG.append('text')
+      .attr('font-size', '12px').attr('font-weight', '600').text(headerText);
+    const headerW = (headerEl.node() as SVGTextElement).getBBox().width;
+
+    // Measure outcome labels
+    let labelsW = 0;
+    if (isSliderVar(v) && !isBoolVar(v)) {
+      for (const o of v.outcomes) {
+        const el = measureG.append('text').attr('font-size', '9px').text(o);
+        labelsW = Math.max(labelsW, (el.node() as SVGTextElement).getBBox().width);
+      }
+      labelsW = labelsW * 2 + 60; // both labels + slider gap
+    } else if (!isSliderVar(v)) {
+      for (const o of v.outcomes) {
+        const el = measureG.append('text').attr('font-size', '10px').text(o);
+        labelsW = Math.max(labelsW, (el.node() as SVGTextElement).getBBox().width);
+      }
+      labelsW += 100; // slider + percentage column
+    }
+
+    _measuredWidths.set(v.name, Math.max(NODE_W_MIN, headerW + NODE_PAD, labelsW + 16));
+  }
+
+  measureG.remove();
+}
+
+function nodeW(v: Variable): number {
+  return _measuredWidths.get(v.name) ?? NODE_W_MIN;
+}
+
+function nodeH(v: Variable): number {
+  if (isSliderVar(v)) return isBoolVar(v) ? NODE_H_BOOL : NODE_H_BOOL_LABELS;
+  return NODE_H_MULTI_BASE + v.outcomes.length * NODE_H_PER_OUTCOME;
+}
+
+let _edgeGroup: d3.Selection<SVGGElement, unknown, null, undefined> | null = null;
+let _zoomBehavior: d3.ZoomBehavior<SVGSVGElement, unknown> | null = null;
+let _svg: d3.Selection<SVGSVGElement, unknown, null, undefined> | null = null;
+let _savedTransform: d3.ZoomTransform = d3.zoomIdentity;
+
+/** Apply a saved zoom transform after a render created the SVG. */
+export function restoreZoom(z: { x: number; y: number; k: number }): void {
+  if (!_svg || !_zoomBehavior) return;
+  const t = d3.zoomIdentity.translate(z.x, z.y).scale(z.k);
+  _svg.call(_zoomBehavior.transform, t);
+}
+
+export function fitView(): void {
+  if (!S.network || !_zoomBehavior || !_svg) return;
+  const container = document.getElementById('graph-container')!;
+  const W = container.clientWidth, H = container.clientHeight;
+  if (S.nodePositions.size === 0) return;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const v of S.network.variables) {
+    const p = S.nodePositions.get(v.name);
+    if (!p) continue;
+    const h = nodeH(v);
+    const w = nodeW(v);
+    minX = Math.min(minX, p.x - w / 2);
+    maxX = Math.max(maxX, p.x + w / 2);
+    minY = Math.min(minY, p.y - h / 2);
+    maxY = Math.max(maxY, p.y + h / 2);
+  }
+  const pad = 30;
+  const bw = maxX - minX + pad * 2, bh = maxY - minY + pad * 2;
+  const scale = Math.min(W / bw, H / bh, 2);
+  const tx = W / 2 - (minX + maxX) / 2 * scale;
+  const ty = H / 2 - (minY + maxY) / 2 * scale;
+  _svg.transition().duration(300).call(
+    _zoomBehavior.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+}
+
+export function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distribution>): void {
+  const container = document.getElementById('graph-container')!;
+  // Preserve zoom transform across re-renders
+  if (_svg) _savedTransform = d3.zoomTransform(_svg.node()!);
+  container.innerHTML = '';
+  const W = container.clientWidth, H = container.clientHeight;
+  _svg = d3.select(container).append('svg').attr('width', W).attr('height', H)
+    .style('user-select', 'none');
+  const svg = _svg;
+  const defs = svg.append('defs');
+  // Measure text widths to size nodes correctly
+  measureTextWidths(svg, net, posteriors);
+
+  // Drop shadow for nodes
+  const shadow = defs.append('filter').attr('id', 'node-shadow').attr('x', '-10%').attr('y', '-10%').attr('width', '130%').attr('height', '140%');
+  shadow.append('feDropShadow').attr('dx', 0).attr('dy', 2).attr('stdDeviation', 4).attr('flood-opacity', 0.15);
+
+  defs.append('marker').attr('id', 'arr')
+    .attr('viewBox', '0 -4 8 8').attr('refX', 8).attr('refY', 0)
+    .attr('markerWidth', ARR_LEN).attr('markerHeight', ARR_LEN).attr('orient', 'auto')
+    .append('path').attr('d', 'M0,-3.5L8,0L0,3.5').attr('fill', 'var(--edge)');
+
+  // SVG styles for hover highlight from panel
+  defs.append('style').text(`
+    .node-g.highlight > rect:first-child {
+      stroke: var(--accent) !important;
+      stroke-width: 3 !important;
+      filter: drop-shadow(0 0 6px var(--accent));
+    }
+  `);
+
+  // Ensure fallback positions
+  for (const v of net.variables)
+    if (!S.nodePositions.has(v.name))
+      S.nodePositions.set(v.name, v.position ? { x: v.position.x * 2 + 80, y: v.position.y * 2 + 40 } : { x: W / 2, y: H / 2 });
+
+  // Zoomable/pannable content group
+  const contentG = svg.append('g');
+  _zoomBehavior = d3.zoom<SVGSVGElement, unknown>()
+    .scaleExtent([0.1, 4])
+    .on('zoom', (ev) => contentG.attr('transform', ev.transform));
+  svg.call(_zoomBehavior);
+  svg.on('click', (ev) => { if (ev.target === svg.node()) clearSelection(); });
+  // Restore previous zoom transform
+  if (_savedTransform !== d3.zoomIdentity) {
+    svg.call(_zoomBehavior.transform, _savedTransform);
+  }
+
+  _edgeGroup = contentG.append('g');
+  drawEdges(net);
+
+  for (const v of net.variables) {
+    const pos = S.nodePositions.get(v.name)!;
+    const dist = posteriors.get(v);
+    const w = nodeW(v);
+    const h = nodeH(v);
+    const isObs = S.observationEnabled.has(v.name);
+    const isHard = isObs && S.hardEvidence.has(v.name);
+    const isSoft = isObs && S.softEvidence.has(v.name);
+
+    // Detect degenerate posteriors (all zeros or NaN = inconsistent evidence)
+    const isDegenerate = dist ? [...dist.values()].every(p => p === 0 || isNaN(p)) : false;
+
+    const ng = contentG.append('g').attr('transform', `translate(${pos.x},${pos.y})`);
+
+    // Background
+    // Pastel color per variable (HSL, evenly spaced hue)
+    const varIdx = net.variables.indexOf(v);
+    const hue = (varIdx / net.variables.length) * 360;
+    const isDark = matchMedia('(prefers-color-scheme: dark)').matches;
+    // Sensitivity heat-map: tint node by influence on the query variable
+    const influenceVal = S.sensitivityInfluence?.get(v.name) ?? 0;
+    const isQueryNode = S.sensitivityMode && S.sensitivityQuery === v.name;
+    const maxInfluence = S.sensitivityInfluence ? Math.max(...S.sensitivityInfluence.values(), 0.01) : 1;
+    const influenceNorm = Math.min(1, influenceVal / maxInfluence); // 0..1
+
+    let bgFill: string;
+    let borderCol: string;
+    if (isQueryNode) {
+      bgFill = isDark ? '#1a2a3a' : '#eff6ff';
+      borderCol = 'var(--accent)';
+    } else if (S.sensitivityMode && S.sensitivityInfluence) {
+      // Heat-map: interpolate from neutral to warm orange/red by influence
+      const sat = Math.round(20 + influenceNorm * 60);
+      const lit = isDark ? Math.round(15 + (1 - influenceNorm) * 10) : Math.round(95 - influenceNorm * 15);
+      bgFill = `hsl(${Math.round(30 - influenceNorm * 20)}, ${sat}%, ${lit}%)`;
+      borderCol = influenceNorm > 0.3
+        ? `hsl(${Math.round(20 - influenceNorm * 15)}, ${Math.round(50 + influenceNorm * 40)}%, ${isDark ? 55 : 45}%)`
+        : 'var(--border-node)';
+    } else if (isDegenerate) {
+      bgFill = isDark ? '#2a1a1a' : '#fef2f2';
+      borderCol = 'var(--accent-hard)';
+    } else if (isObs) {
+      bgFill = `hsl(${hue}, ${isHard ? 20 : 25}%, ${isDark ? 20 : 92}%)`;
+      borderCol = isHard ? 'var(--accent-hard)' : isSoft ? 'var(--accent-soft)' : 'var(--border-node)';
+    } else {
+      bgFill = 'var(--bg-node)';
+      borderCol = 'var(--border-node)';
+    }
+    // Accent for sliders: colored when observed, neutral when not
+    const nodeAccent = isObs
+      ? (isHard ? 'var(--accent-hard)' : isSoft ? 'var(--accent-soft)' : `hsl(${hue}, 55%, ${isDark ? 55 : 45}%)`)
+      : 'var(--accent)';
+
+    const isSel = S.selectedNodes.has(v.name);
+
+    // Selection highlight (behind the node)
+    if (isSel) {
+      ng.append('rect').attr('x', -w / 2 - 3).attr('y', -h / 2 - 3)
+        .attr('width', w + 6).attr('height', h + 6).attr('rx', 10)
+        .attr('fill', 'none').attr('stroke', 'var(--accent)').attr('stroke-width', 2.5)
+        .attr('stroke-dasharray', '4,2').attr('opacity', 0.8);
+    }
+
+    const bgRect = ng.append('rect').attr('x', -w / 2).attr('y', -h / 2)
+      .attr('width', w).attr('height', h).attr('rx', 8)
+      .attr('fill', bgFill).attr('stroke', borderCol).attr('stroke-width', 1.5)
+      .attr('filter', 'url(#node-shadow)');
+    if (isDegenerate) {
+      bgRect.attr('stroke-dasharray', '4,3').attr('opacity', 0.7);
+    }
+
+    // Node drag (moves all selected if this node is selected)
+    let dragMoved = false;
+    ng.call(d3.drag<SVGGElement, unknown>()
+      .filter((ev) => !(ev.target as SVGElement).classList.contains('slider-thumb') && !(ev.target as SVGElement).closest('.cz'))
+      .on('start', () => { dragMoved = false; })
+      .on('drag', (ev) => {
+        if (!dragMoved) {
+          // First drag event: commit selection so the right nodes move
+          dragMoved = true;
+          if (!isSel) { S.selectedNodes.clear(); S.selectedNodes.add(v.name); }
+        }
+        const toMove = S.selectedNodes.has(v.name) ? [...S.selectedNodes] : [v.name];
+        for (const name of toMove) {
+          const p = S.nodePositions.get(name);
+          if (p) { p.x += ev.dx; p.y += ev.dy; S.nodePositions.set(name, { ...p }); }
+        }
+        contentG.selectAll<SVGGElement, unknown>('.node-g').each(function () {
+          const gEl = d3.select(this);
+          const name = gEl.attr('data-var');
+          if (name && toMove.includes(name)) {
+            const p = S.nodePositions.get(name)!;
+            gEl.attr('transform', `translate(${p.x},${p.y})`);
+          }
+        });
+        drawEdges(net);
+      })
+      .on('end', () => { if (dragMoved) render(); })
+    ).attr('cursor', 'grab');
+
+    ng.attr('class', 'node-g').attr('data-var', v.name);
+
+    // Click: only fires for non-drag interactions
+    ng.on('click', (ev) => {
+      if (dragMoved) return;
+      if ((ev.target as SVGElement).closest('.cz') || (ev.target as SVGElement).classList.contains('slider-thumb')) return;
+      selectNode(v.name, ev.shiftKey);
+    });
+
+    // ── Row 1: eye icon + "label: XX%" ──
+    const ry = -h / 2 + 14;
+    // Compute display weights (same source as sliders: evidence when observed, posterior when not)
+    const dw = isObs ? getWeights(v) : dist ? new Map(v.outcomes.map(o => [o, dist.get(o) ?? 0])) : null;
+    let labelSuffix: string;
+    if (isDegenerate && !isObs) {
+      labelSuffix = ': inconsistent';
+    } else if (isHard) {
+      labelSuffix = ` = ${S.hardEvidence.get(v.name)}`;
+    } else if (dw && isSliderVar(v)) {
+      const p0 = dw.get(v.outcomes[0]) ?? 0;
+      const pct0 = Math.round(p0 * 100);
+      if (isBoolVar(v)) {
+        const trueIdx = /^(true|yes|t|y)$/i.test(v.outcomes[0]) ? 0 : 1;
+        const pctTrue = trueIdx === 0 ? pct0 : 100 - pct0;
+        labelSuffix = (pctTrue === 100 || pctTrue === 0) && !isObs ? '' : `: ${pctTrue}%`;
+      } else if (pct0 === 0) {
+        labelSuffix = `: ${v.outcomes[1]}`;
+      } else if (pct0 === 100) {
+        labelSuffix = `: ${v.outcomes[0]}`;
+      } else {
+        labelSuffix = `: ${pct0}% ${v.outcomes[0]}`;
+      }
+    } else if (dw) {
+      let maxOut = v.outcomes[0], maxP = 0;
+      for (const o of v.outcomes) { const p = dw.get(o) ?? 0; if (p > maxP) { maxP = p; maxOut = o; } }
+      const maxPct = Math.round(maxP * 100);
+      labelSuffix = maxPct === 100 ? `: ${maxOut}` : `: ${maxPct}% ${maxOut}`;
+    } else {
+      labelSuffix = '';
+    }
+
+    // Eye icon (Material Design Visibility / VisibilityOff)
+    const eyeG = ng.append('g').attr('class', 'cz').attr('cursor', 'pointer')
+      .attr('transform', `translate(${-w / 2 + 18},${ry})`)
+      .on('click', (ev) => { ev.stopPropagation(); toggleEye(v); });
+    eyeG.append('rect').attr('x', -10).attr('y', -10).attr('width', 20).attr('height', 20).attr('fill', 'transparent');
+    const eyeColor = isObs ? (isHard ? 'var(--accent-hard)' : isSoft ? 'var(--accent-soft)' : 'var(--accent)') : 'var(--text-dim)';
+    eyeG.append('path').attr('d', isObs ? ICON_VIS : ICON_VIS_OFF)
+      .attr('fill', eyeColor).attr('transform', 'translate(-8,-8) scale(0.67)');
+    eyeG.append('title').text(eyeTooltip(v));
+
+    // Name + percentage
+    const nameG = ng.append('g').attr('class', 'cz').attr('cursor', 'pointer')
+      .attr('transform', `translate(${-w / 2 + 32},${ry})`)
+      .on('click', (ev) => { ev.stopPropagation(); cycleObservation(v); });
+    nameG.append('rect').attr('x', -2).attr('y', -10).attr('width', w - 48).attr('height', 20).attr('fill', 'transparent');
+    const nameColor = isObs ? (isHard ? 'var(--accent-hard)' : 'var(--accent-soft)') : 'var(--text)';
+    nameG.append('text').attr('y', 4).attr('font-size', '12px').attr('font-weight', '600').attr('fill', nameColor)
+      .text(v.name + labelSuffix);
+
+    // ── Row 2: slider or bars ──
+    if (dist) {
+      if (isSliderVar(v)) boolSlider(ng, v, dist, w, h, nodeAccent);
+      else multiNode(ng, v, dist, w, h, nodeAccent);
+    }
+  }
+}
+
+function drawEdges(net: BayesianNetwork): void {
+  if (!_edgeGroup) return;
+  _edgeGroup.selectAll('*').remove();
+
+  type Side = 'top' | 'bottom' | 'left' | 'right';
+
+  function pickSide(ax: number, ay: number, aw: number, ah: number,
+                    bx: number, by: number): Side {
+    const dx = bx - ax, dy = by - ay;
+    if (Math.abs(dy) * aw > Math.abs(dx) * ah) return dy > 0 ? 'bottom' : 'top';
+    return dx > 0 ? 'right' : 'left';
+  }
+
+  function tangent(s: Side): [number, number] {
+    return (s === 'top' || s === 'bottom') ? [1, 0] : [0, 1];
+  }
+
+  function slotXY(cx: number, cy: number, w: number, h: number,
+                  side: Side, idx: number, count: number): [number, number] {
+    const hw = w / 2, hh = h / 2, sp = 12;
+    if (count <= 1) {
+      if (side === 'top') return [cx, cy - hh];
+      if (side === 'bottom') return [cx, cy + hh];
+      if (side === 'left') return [cx - hw, cy];
+      return [cx + hw, cy];
+    }
+    if (side === 'top' || side === 'bottom') {
+      const span = Math.min(w - 20, (count - 1) * sp);
+      return [cx - span / 2 + span * idx / (count - 1), cy + (side === 'bottom' ? hh : -hh)];
+    }
+    const span = Math.min(h - 10, (count - 1) * sp);
+    return [cx + (side === 'right' ? hw : -hw), cy - span / 2 + span * idx / (count - 1)];
+  }
+
+  // Build edges with side info
+  interface E { pn: string; cn: string; ps: Side; cs: Side; }
+  const allEdges: E[] = [];
+  for (const cpt of net.cpts) {
+    for (const p of cpt.parents) {
+      const fp = S.nodePositions.get(p.name)!, tp = S.nodePositions.get(cpt.variable.name)!;
+      allEdges.push({
+        pn: p.name, cn: cpt.variable.name,
+        ps: pickSide(fp.x, fp.y, nodeW(p), nodeH(p), tp.x, tp.y),
+        cs: pickSide(tp.x, tp.y, nodeW(cpt.variable), nodeH(cpt.variable), fp.x, fp.y),
+      });
+    }
+  }
+
+  // Group by (node, side) — all connections on the same side share slots
+  const groups = new Map<string, number[]>();
+  for (let i = 0; i < allEdges.length; i++) {
+    const e = allEdges[i];
+    const fk = e.pn + '|' + e.ps;
+    const tk = e.cn + '|' + e.cs;
+    if (!groups.has(fk)) groups.set(fk, []);
+    groups.get(fk)!.push(i);
+    if (!groups.has(tk)) groups.set(tk, []);
+    // Avoid duplicate if same edge maps to same key (self-loop edge, unlikely)
+    if (fk !== tk || !groups.get(tk)!.includes(i)) groups.get(tk)!.push(i);
+  }
+
+  // Sort each group by projection of other-endpoint onto tangent
+  for (const [key, indices] of groups) {
+    const [nodeName, side] = key.split('|') as [string, Side];
+    const np = S.nodePositions.get(nodeName)!;
+    const [tx, ty] = tangent(side);
+    indices.sort((ai, bi) => {
+      const a = allEdges[ai], b = allEdges[bi];
+      const oa = S.nodePositions.get(a.pn === nodeName ? a.cn : a.pn)!;
+      const ob = S.nodePositions.get(b.pn === nodeName ? b.cn : b.pn)!;
+      return ((oa.x - np.x) * tx + (oa.y - np.y) * ty)
+           - ((ob.x - np.x) * tx + (ob.y - np.y) * ty);
+    });
+  }
+
+  // Build slot index lookup: edgeIdx → { fromSlot, fromCount, toSlot, toCount }
+  const slots = allEdges.map((e, i) => {
+    const fk = e.pn + '|' + e.ps;
+    const tk = e.cn + '|' + e.cs;
+    const fg = groups.get(fk)!;
+    const tg = groups.get(tk)!;
+    return {
+      fi: fg.indexOf(i), fc: fg.length,
+      ti: tg.indexOf(i), tc: tg.length,
+    };
+  });
+
+  // Draw
+  for (let i = 0; i < allEdges.length; i++) {
+    const e = allEdges[i], s = slots[i];
+    const fp = S.nodePositions.get(e.pn)!, tp = S.nodePositions.get(e.cn)!;
+    const pv = net.getVariable(e.pn)!, cv = net.getVariable(e.cn)!;
+    const [x1, y1] = slotXY(fp.x, fp.y, nodeW(pv), nodeH(pv), e.ps, s.fi, s.fc);
+    const [x2, y2] = slotXY(tp.x, tp.y, nodeW(cv), nodeH(cv), e.cs, s.ti, s.tc);
+    const dx = x2 - x1, dy = y2 - y1, len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const ex = x2, ey = y2;
+    // Cubic bezier: control points blend side normal (70%) with edge direction (30%)
+    // so the curve arrives at a natural angle, not perfectly perpendicular
+    const cOff = Math.min(len * 0.4, 80);
+    const sideDir = (side: Side): [number, number] =>
+      side === 'bottom' ? [0, 1] : side === 'top' ? [0, -1] : side === 'right' ? [1, 0] : [-1, 0];
+    const [sdx1, sdy1] = sideDir(e.ps);
+    const [sdx2, sdy2] = sideDir(e.cs);
+    const nx = dx / len, ny = dy / len;
+    const b = 0.3; // blend factor: 0 = pure side normal, 1 = pure edge direction
+    const cx1 = x1 + (sdx1 * (1 - b) + nx * b) * cOff;
+    const cy1 = y1 + (sdy1 * (1 - b) + ny * b) * cOff;
+    const cx2 = ex + (sdx2 * (1 - b) - nx * b) * cOff;
+    const cy2 = ey + (sdy2 * (1 - b) - ny * b) * cOff;
+    _edgeGroup.append('path')
+      .attr('d', `M${x1},${y1} C${cx1},${cy1} ${cx2},${cy2} ${ex},${ey}`)
+      .attr('fill', 'none')
+      .attr('stroke', 'var(--edge)').attr('stroke-width', 1.5).attr('marker-end', 'url(#arr)');
+  }
+}
+
+/**
+ * Snap-zone targets at slider endpoints (only when NOT already snapped).
+ * When snapped, the handle itself shows an X on hover; click-without-drag clears.
+ */
+function addSnapZones(
+  g: d3.Selection<SVGGElement, unknown, null, undefined>,
+  bx: number, by: number, bw: number, barH: number,
+  zones: Array<{ x: number; label: string; isSnapped: boolean; snap: () => void }>,
+): void {
+  for (const z of zones) {
+    if (z.isSnapped) continue; // snapped → clear is on the handle, not here
+    const sz = g.append('g')
+      .attr('transform', `translate(${z.x},${by + barH / 2})`)
+      .attr('pointer-events', 'none').attr('opacity', 0);
+    sz.append('circle').attr('r', 9).attr('fill', 'var(--accent)').attr('opacity', 0.25);
+    sz.append('circle').attr('r', 5).attr('fill', 'var(--accent)').attr('opacity', 0.5);
+    sz.append('title').text(z.label);
+
+    // Hover hit area (clickable)
+    const hit = g.append('rect').attr('class', 'cz')
+      .attr('x', z.x - 16).attr('y', by - 6).attr('width', 32).attr('height', barH + 12)
+      .attr('fill', 'transparent').attr('cursor', 'pointer')
+      .on('mouseenter', () => sz.attr('opacity', 1))
+      .on('mouseleave', () => sz.attr('opacity', 0))
+      .on('click', (ev) => { ev.stopPropagation(); z.snap(); });
+    hit.append('title').text(z.label);
+  }
+}
+
+/**
+ * Create a draggable slider thumb.
+ * When observation is active (isObs), hovering shows an X overlay;
+ * clicking without dragging clears the observation.
+ */
+function addSliderThumb(
+  g: d3.Selection<SVGGElement, unknown, null, undefined>,
+  cx: number, cy: number, r: number,
+  fillVar: string, isObs: boolean,
+  onDrag: (x: number) => void, onEnd: (x: number) => void, onClear: () => void,
+  minX: number, maxX: number,
+): void {
+  const thumbG = g.append('g').attr('class', 'slider-thumb');
+
+  const circle = thumbG.append('circle')
+    .attr('cx', cx).attr('cy', cy).attr('r', r)
+    .attr('fill', 'var(--bg-node)').attr('stroke', fillVar).attr('stroke-width', 2.5)
+    .attr('cursor', 'ew-resize').attr('opacity', isObs ? 1 : 0.4)
+    .attr('filter', isObs ? 'drop-shadow(0 1px 3px rgba(0,0,0,0.3))' : '');
+
+  // Subtle X inside thumb (shown on hover when observed)
+  const s = Math.max(2, r * 0.4); // X arm size, proportional to thumb
+  const xOverlay = thumbG.append('g')
+    .attr('transform', `translate(${cx},${cy})`)
+    .attr('opacity', 0).attr('pointer-events', 'none');
+  xOverlay.append('line').attr('x1', -s).attr('y1', -s).attr('x2', s).attr('y2', s)
+    .attr('stroke', 'var(--accent-hard)').attr('stroke-width', 1.5).attr('stroke-linecap', 'round');
+  xOverlay.append('line').attr('x1', s).attr('y1', -s).attr('x2', -s).attr('y2', s)
+    .attr('stroke', 'var(--accent-hard)').attr('stroke-width', 1.5).attr('stroke-linecap', 'round');
+
+  if (isObs) {
+    circle
+      .on('mouseenter', () => xOverlay.attr('opacity', 1))
+      .on('mouseleave', () => xOverlay.attr('opacity', 0));
+    circle.append('title').text('Click to clear observation');
+  }
+
+  let dragged = false;
+  circle.call(d3.drag<SVGCircleElement, unknown>()
+    .on('start', (e) => { e.sourceEvent?.stopPropagation(); dragged = false; })
+    .on('drag', function (e) {
+      dragged = true;
+      const nx = Math.max(minX, Math.min(maxX, e.x));
+      d3.select(this).attr('cx', nx);
+      xOverlay.attr('transform', `translate(${nx},${cy})`);
+      onDrag(nx);
+    })
+    .on('end', function (e) {
+      if (!dragged && isObs) { onClear(); return; }
+      if (dragged) { onEnd(Math.max(minX, Math.min(maxX, e.x))); }
+    })
+  );
+}
+
+function boolSlider(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Variable, dist: Distribution, w: number, h: number, accent: string): void {
+  const showLabels = !isBoolVar(v);
+  const bw = w - 34, bx = -bw / 2, by = -h / 2 + 33;
+  const isObs = S.observationEnabled.has(v.name);
+  const fillVar = isObs ? (S.hardEvidence.has(v.name) ? 'var(--accent-hard)' : 'var(--accent-soft)') : accent;
+
+  // Unified: bar = thumb = display value (evidence when observed, posterior when not)
+  const displayW = isObs ? getWeights(v) : new Map(v.outcomes.map(o => [o, dist.get(o) ?? 0]));
+  const tr = displayW.get(v.outcomes[0]) ?? 0; // right side = outcomes[0]
+  const rx = 5; // bar corner radius — thumb/snap range is inset by rx
+  const thumbMin = bx + rx, thumbMax = bx + bw - rx, thumbRange = thumbMax - thumbMin;
+
+  // Bar background (also a click target to jump the slider)
+  const barBg = g.append('rect').attr('x', bx).attr('y', by - 4).attr('width', bw).attr('height', 18)
+    .attr('rx', rx).attr('fill', 'transparent').attr('cursor', 'pointer').attr('class', 'cz');
+  g.append('rect').attr('x', bx).attr('y', by).attr('width', bw).attr('height', 10)
+    .attr('rx', rx).attr('fill', 'var(--bg-bar)').attr('pointer-events', 'none');
+  if (tr > 0.005)
+    g.append('rect').attr('x', bx).attr('y', by).attr('width', 2 * rx + thumbRange * tr).attr('height', 10)
+      .attr('rx', rx).attr('fill', fillVar).attr('opacity', 0.6).attr('pointer-events', 'none');
+  barBg.on('click', (ev) => {
+    ev.stopPropagation();
+    const pt = (ev.target as SVGElement).ownerSVGElement!.createSVGPoint();
+    pt.x = ev.clientX; pt.y = ev.clientY;
+    const local = pt.matrixTransform((ev.target as SVGGraphicsElement).getScreenCTM()!.inverse());
+    setSlider(v, Math.max(0, Math.min(1, (local.x - thumbMin) / thumbRange)));
+  });
+
+  // Show outcome labels for non-boolean 2-outcome vars: Cat1 <slider> Cat2
+  if (showLabels) {
+    g.append('text').attr('x', bx).attr('y', by + 20)
+      .attr('font-size', '9px').attr('fill', 'var(--text-dim)').attr('text-anchor', 'start')
+      .text(v.outcomes[1]); // left = "false" equivalent
+    g.append('text').attr('x', bx + bw).attr('y', by + 20)
+      .attr('font-size', '9px').attr('fill', 'var(--text-dim)').attr('text-anchor', 'end')
+      .text(v.outcomes[0]); // right = "true" equivalent
+  }
+
+  // Thumb (click-without-drag = clear when observed)
+  const clearObs = () => { S.hardEvidence.delete(v.name); S.softEvidence.delete(v.name); S.observationEnabled.delete(v.name); render(); };
+  addSliderThumb(g, thumbMin + thumbRange * tr, by + 5, 7, fillVar, isObs,
+    () => {}, (x) => setSlider(v, (x - thumbMin) / thumbRange), clearObs, thumbMin, thumbMax);
+
+  // Snap zones at endpoints (only shown when not already snapped there)
+  const snappedFalse = isObs && S.hardEvidence.get(v.name) === v.outcomes[1];
+  const snappedTrue = isObs && S.hardEvidence.get(v.name) === v.outcomes[0];
+  addSnapZones(g, bx, by, bw, 10, [
+    { x: thumbMin, label: `Click to observe as ${v.outcomes[1]}`, isSnapped: snappedFalse,
+      snap: () => { S.hardEvidence.set(v.name, v.outcomes[1]); S.softEvidence.delete(v.name); S.observationEnabled.add(v.name); render(); } },
+    { x: thumbMax, label: `Click to observe as ${v.outcomes[0]}`, isSnapped: snappedTrue,
+      snap: () => { S.hardEvidence.set(v.name, v.outcomes[0]); S.softEvidence.delete(v.name); S.observationEnabled.add(v.name); render(); } },
+  ]);
+}
+
+function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Variable, dist: Distribution, w: number, h: number, accent: string): void {
+  const isObs = S.observationEnabled.has(v.name);
+  const tweaked = S.tweakedOutcomes.get(v.name) ?? new Set<string>();
+
+  // Get display weights: evidence weights when observed, posteriors when not
+  const weights = getWeights(v, undefined);
+  // When observed, use evidence weights; when not, use posteriors
+  const displayW = isObs ? weights : new Map(v.outcomes.map(o => [o, dist.get(o) ?? 0]));
+
+  // Layout columns
+  const pctColW = 38;
+  const labelColW = Math.max(...v.outcomes.map(o => o.length)) * 6.5 + 14;
+  const barPad = 6;
+  const thumbR = 5;
+  const bw = w - 16 - labelColW - barPad - pctColW - thumbR;
+  const bx = -w / 2 + 8 + labelColW + barPad;
+
+  let y = -h / 2 + 30;
+
+  for (let i = 0; i < v.outcomes.length; i++) {
+    const o = v.outcomes[i];
+    const val = displayW.get(o) ?? 0; // bar = thumb = % = this value
+    const pct = Math.round(val * 100);
+    const by = y + 2;
+    const textY = by + 3;
+    const isTweaked = tweaked.has(o);
+
+    // Label (right-aligned, clickable, bold if tweaked)
+    const lg = g.append('g').attr('class', 'cz').attr('cursor', 'pointer')
+      .on('click', (ev) => { ev.stopPropagation(); cycleOutcome(v, i); });
+    lg.append('rect').attr('x', -w / 2 + 6).attr('y', by - 8).attr('width', labelColW + 4).attr('height', 16).attr('fill', 'transparent');
+    lg.append('text').attr('x', bx - barPad).attr('y', textY)
+      .attr('font-size', '10px')
+      .attr('fill', isTweaked ? 'var(--text)' : 'var(--text-secondary)')
+      .attr('font-weight', isTweaked ? '700' : '400')
+      .attr('text-anchor', 'end').attr('dominant-baseline', 'central').text(o);
+
+    // Percentage
+    g.append('text').attr('x', w / 2 - 8).attr('y', textY)
+      .attr('font-size', '10px').attr('font-weight', '600').attr('fill', 'var(--text)')
+      .attr('text-anchor', 'end').attr('dominant-baseline', 'central')
+      .text(`${pct}%`);
+
+    // Bar background (click-to-jump)
+    const mrx = 3; // bar corner radius — thumb/snap inset by mrx
+    const mThumbMin = bx + mrx, mThumbMax = bx + bw - mrx, mThumbRange = mThumbMax - mThumbMin;
+    const barHit = g.append('rect').attr('x', bx).attr('y', by - 4).attr('width', bw).attr('height', 14)
+      .attr('fill', 'transparent').attr('cursor', 'pointer').attr('class', 'cz');
+    g.append('rect').attr('x', bx).attr('y', by).attr('width', bw).attr('height', 6)
+      .attr('rx', mrx).attr('fill', 'var(--bg-bar)').attr('pointer-events', 'none');
+    if (val > 0.005)
+      g.append('rect').attr('x', bx).attr('y', by).attr('width', 2 * mrx + mThumbRange * val).attr('height', 6)
+        .attr('rx', mrx).attr('fill', accent).attr('opacity', 0.6).attr('pointer-events', 'none');
+
+    const idx = i;
+    barHit.on('click', (ev) => {
+      ev.stopPropagation();
+      const pt = (ev.target as SVGElement).ownerSVGElement!.createSVGPoint();
+      pt.x = ev.clientX; pt.y = ev.clientY;
+      const local = pt.matrixTransform((ev.target as SVGGraphicsElement).getScreenCTM()!.inverse());
+      setMultiWeight(v, idx, Math.max(0, Math.min(1, (local.x - mThumbMin) / mThumbRange)));
+    });
+
+    // Thumb: clear-on-click clears THIS outcome's tweak only (if tweaked)
+    const clearThis = isTweaked ? () => clearOutcomeTweak(v, idx) : () => {};
+    addSliderThumb(g, mThumbMin + mThumbRange * val, by + 3, 5, accent, isTweaked,
+      () => {}, (x) => setMultiWeight(v, idx, (x - mThumbMin) / mThumbRange), clearThis, mThumbMin, mThumbMax);
+
+    // Snap zones
+    const isSnapped100 = isObs && S.hardEvidence.get(v.name) === o;
+    const isSnapped0 = val < 0.01 && isTweaked;
+    addSnapZones(g, bx, by, bw, 6, [
+      { x: mThumbMin, label: `Click to exclude ${o}`, isSnapped: isSnapped0,
+        snap: () => setMultiWeight(v, i, 0) },
+      { x: mThumbMax, label: `Click to observe as ${o}`, isSnapped: isSnapped100,
+        snap: () => { S.hardEvidence.set(v.name, o); S.softEvidence.delete(v.name); S.observationEnabled.add(v.name); S.tweakedOutcomes.set(v.name, new Set(v.outcomes)); render(); } },
+    ]);
+
+    y += NODE_H_PER_OUTCOME;
+  }
+}
+
+// ─── Render orchestrator ─────────────────────────────────────────────
+
+export function render(): void {
+  if (!S.network || !S.cachedEngine) return;
+  const [he, se] = effectiveEvidence();
+  const result = S.cachedEngine.infer(he, se);
+
+  // Sensitivity heat-map: only when mode is active and a query is selected
+  if (S.sensitivityMode && S.sensitivityQuery && S.network.getVariable(S.sensitivityQuery)) {
+    const qVar = S.network.getVariable(S.sensitivityQuery)!;
+    const qOutcome = qVar.outcomes[0];
+    try {
+      S.sensitivityResults = analyticSensitivity(S.network, S.sensitivityQuery, qOutcome, he && he.size > 0 ? he : undefined);
+      S.sensitivityInfluence = variableInfluenceMap(S.sensitivityResults);
+    } catch {
+      S.sensitivityResults = null;
+      S.sensitivityInfluence = null;
+    }
+  } else {
+    S.sensitivityInfluence = null;
+    S.sensitivityResults = null;
+  }
+
+  // VOI: compute whenever any node is selected (no sensitivity mode needed)
+  // Query targets = selected nodes (makes sense for both observed and unobserved:
+  // "what else could I observe to learn more about these variables?")
+  if (S.selectedNodes.size > 0 && S.cachedEngine) {
+    try {
+      S.voiResults = multiQueryVOI(S.network, [...S.selectedNodes], he ?? new Map(), S.cachedEngine);
+    } catch (e) {
+      console.warn('VOI computation failed:', e);
+      S.voiResults = null;
+    }
+  } else {
+    S.voiResults = null;
+  }
+
+  renderGraph(S.network, result.posteriors);
+  renderInfoPanel();
+
+  if (IS_MCP) {
+    saveStateToLocalStorage();
+  } else {
+    saveStateToHash(_svg ? d3.zoomTransform(_svg.node()!) : null);
+    if (window.parent !== window) {
+      const d: Record<string, Record<string, number>> = {};
+      for (const [v, dist] of result.posteriors) d[v.name] = Object.fromEntries(dist);
+      window.parent.postMessage({ type: 'nabab-posteriors', d }, '*');
+    }
+  }
+}
+
+// ─── Layout ──────────────────────────────────────────────────────────
+
+export function autoLayout(): void {
+  if (!S.network) return;
+  const g = new dagre.graphlib.Graph();
+  g.setGraph({ rankdir: 'TB', nodesep: 50, ranksep: 70, marginx: 30, marginy: 30 });
+  g.setDefaultEdgeLabel(() => ({}));
+  for (const v of S.network.variables) g.setNode(v.name, { width: nodeW(v), height: nodeH(v) });
+  for (const cpt of S.network.cpts)
+    for (const p of cpt.parents) g.setEdge(p.name, cpt.variable.name);
+  dagre.layout(g);
+  const c = document.getElementById('graph-container')!;
+  const gw = g.graph().width ?? c.clientWidth;
+  const gh = g.graph().height ?? c.clientHeight;
+  const ox = Math.max(0, (c.clientWidth - gw) / 2);
+  const oy = Math.max(0, (c.clientHeight - gh) / 2);
+  for (const v of S.network.variables) {
+    const n = g.node(v.name);
+    S.nodePositions.set(v.name, { x: n.x + ox, y: n.y + oy });
+  }
+  render();
+}
