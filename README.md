@@ -4,9 +4,11 @@
 
 <!-- Badges placeholder -->
 <!-- [![npm version](https://img.shields.io/npm/v/nabab.svg)](https://www.npmjs.com/package/nabab) -->
-<!-- [![CI](https://github.com/ochafik/nabab/actions/workflows/ci.yml/badge.svg)](https://github.com/ochafik/nabab/actions) -->
+[![CI](https://github.com/ochafik/nabab/actions/workflows/ci.yml/badge.svg)](https://github.com/ochafik/nabab/actions)
 
 Nabab is a pure TypeScript library for exact and approximate inference on discrete Bayesian networks. It ships with an interactive D3-based viewer, an MCP server for LLM integration, and benchmarks against 17 standard models from bnlearn.
+
+**Try it live:** [nabab.ochafik.workers.dev](https://nabab.ochafik.workers.dev/) — the web viewer, with an MCP server at [`/mcp`](https://nabab.ochafik.workers.dev/mcp) ([help](https://nabab.ochafik.workers.dev/help)).
 
 ## Features
 
@@ -20,20 +22,21 @@ Nabab is a pure TypeScript library for exact and approximate inference on discre
   - **Soft evidence (Jeffrey's rule)** -- likelihood weighting on any variable, not just hard observations
 - **Interactive D3 viewer** with dagre layout, probability bar sliders, soft/hard evidence toggling, CPT inspection, drag-and-drop XML loading, and URL state persistence
 - **DOM-free library** -- the inference engine uses regex-based XML parsing and has zero DOM dependencies; works in Node.js, Deno, Bun, Cloudflare Workers, or any browser
-- **MCP server** for Claude and other LLM tool-use integration
+- **MCP server** for Claude and other LLM tool-use integration, with an interactive MCP App viewer
 - **17 standard benchmark models** (Asia, Alarm, Sachs, Child, Insurance, Water, Hepar2, Hailfinder, Win95pts, Pathfinder, Barley, Mildew, Diabetes, Link, Pigs, Andes, Munin1)
-- **121 tests** across 12 test files covering factors, graphs, triangulation, inference, parsers, cross-validation, LBP, VE, cached inference, worker inference, and TensorFlow.js factor ops
+- **542 tests** across 31 test files covering factors, graphs, triangulation, inference, parsers, cross-validation, LBP, VE, cached inference, worker inference, and TensorFlow.js factor ops
 
 ## Quick Start
 
 ```bash
-# Install dependencies
+# Install dependencies (Node >= 22.12)
 npm install
 
 # Start the interactive viewer (Vite dev server)
 npm run dev
 
-# Run the test suite
+# Lint, run the test suite
+npm run lint
 npm test
 
 # Build the library and viewer
@@ -217,38 +220,54 @@ sampledCriticality(post, candidateNames, 'elections', 'held@2028');  // drop in 
 
 ## Viewer
 
-The interactive viewer (`npm run dev`) provides:
+The interactive viewer runs locally with `npm run dev` and is deployed at [nabab.ochafik.workers.dev](https://nabab.ochafik.workers.dev/). It provides:
 
 - **Dagre auto-layout** of the Bayesian network graph
+- **Scroll to pan**, **⌘/Ctrl+scroll or pinch to zoom** (drag and Fit View also work)
 - **Probability bars** on each node showing the current posterior distribution
 - **Click to cycle** through hard evidence states for any variable
 - **Drag sliders** to set soft/likelihood evidence with continuous weights
 - **Eye toggle** to enable/disable observations per node
+- **Value-of-information and sensitivity panels** for the current selection
 - **CPT inspection** panel (click a node to view its conditional probability table)
-- **Drag-and-drop** any `.xml` or `.xmlbif` file to load a custom network
+- **Drag-and-drop** any `.xml`, `.xmlbif`, `.bif` or `.csv` file (CSV runs structure learning) to load a custom network
 - **URL state persistence** -- evidence, zoom, and layout are compressed into the URL hash
-- **17 built-in example networks** selectable from the toolbar
+- **17 built-in example networks** in the toolbar, plus 17 bnlearn benchmark models (up to 724 nodes) and 2 CSV datasets for structure learning
 - **Dark mode** support via `prefers-color-scheme`
 
 ## MCP Server
 
-Nabab includes an MCP (Model Context Protocol) server that lets LLMs like Claude interact with Bayesian networks through tool calls.
+Nabab includes an MCP (Model Context Protocol) server that lets LLMs like Claude interact with Bayesian networks through tool calls. The `query` tool renders an interactive **MCP App** viewer in the client (streaming network loading, live evidence updates).
 
-### Setup with Claude Desktop
+### Connect
 
-Add to your Claude Desktop configuration (`claude_desktop_config.json`):
+Remote (recommended — deployed on Cloudflare Workers, sessions held in a Durable Object):
+
+```bash
+claude mcp add --transport http nabab https://nabab.ochafik.workers.dev/mcp
+```
+
+Local stdio:
+
+```bash
+claude mcp add nabab -- npx tsx src/mcp/node.ts --stdio
+```
+
+or in `claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "nabab": {
       "command": "npx",
-      "args": ["tsx", "src/mcp/server.ts"],
+      "args": ["tsx", "src/mcp/node.ts", "--stdio"],
       "cwd": "/path/to/nabab"
     }
   }
 }
 ```
+
+A local HTTP mode is also available: `npm run mcp` (defaults to `http://localhost:3001/mcp`).
 
 ### Available MCP tools
 
@@ -258,8 +277,26 @@ Add to your Claude Desktop configuration (`claude_desktop_config.json`):
 | `load_network` | Load a network from XMLBIF content or example file name |
 | `set_evidence` | Set observed evidence for a variable |
 | `clear_evidence` | Clear all evidence or for a specific variable |
-| `query` | Query posterior distributions given current evidence |
+| `query` | Query posterior distributions; renders the MCP App viewer |
+| `interact` | Set/clear evidence or load examples; pushes updates to the viewer |
+| `poll_commands` | Long-poll for server-to-viewer commands (viewer side) |
 | `get_network_info` | Get variables, parents, outcomes, and current evidence |
+
+## Deployment
+
+Everything is deployed to Cloudflare Workers as a single Worker (`wrangler.jsonc`):
+
+| Path | Serves |
+|------|--------|
+| `/` | The web viewer (static assets from `dist/viewer`) |
+| `/mcp` | MCP streamable-HTTP endpoint |
+| `/help` | Links and install instructions |
+
+```bash
+npm run deploy   # builds the viewer + MCP App, then wrangler deploy
+```
+
+Sessions and the server→viewer command queue live in a SQLite-backed Durable Object, so they survive Cloudflare's edge load balancing with no Redis dependency. An alternative Vercel deployment (`http.ts`, `vercel.json`) keeps state in warm Lambdas and can use Upstash Redis (`UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN`) for cross-instance command delivery.
 
 ## Benchmark Results
 
@@ -318,16 +355,33 @@ src/lib/                -- Pure inference library (npm-publishable)
   index.ts              -- Public API re-exports
 
 src/viewer/             -- Interactive web viewer
-  main.ts               -- D3 + dagre rendering, interaction, state persistence
+  main.ts               -- DOM wiring, toolbar, drag-drop/paste, boot
+  state.ts              -- Shared mutable viewer state store
+  graph-render.ts       -- d3 + dagre rendering, sliders, layout, render loop
+  evidence.ts           -- Hard/soft (Jeffrey's rule) evidence model
+  loading.ts            -- Examples, parsing, CSV structure learning, state restore
+  persistence.ts        -- URL hash / localStorage serialization
+  info-panel.ts         -- VOI / sensitivity / CPT inspector panel
+  cpt-panel.ts          -- CPT table HTML
+  selection.ts          -- Node selection
+  mcp-app.ts            -- MCP App lifecycle (host connection, streaming input)
+  render-bus.ts         -- Late-bound render trigger (keeps modules acyclic)
 
 src/mcp/                -- MCP server for LLM integration
-  server.ts             -- Stdio-based MCP server (load, query, evidence tools)
+  server.ts             -- Transport-agnostic server factory (tools, assets adapter)
+  node.ts               -- Node entry: stdio or express HTTP (`npm run mcp`)
+  worker.ts             -- Cloudflare Workers entry (Durable Object sessions)
+  commands.ts           -- Server→viewer command queue (Redis or in-memory)
 
 test/                   -- Vitest test suite (542 tests)
 bench/                  -- Benchmark runner and 17 bnlearn models
   models/               -- .bif files (asia, alarm, sachs, child, etc.)
   run-bench.ts          -- Benchmark runner
   results/              -- Baseline results and comparison tools
+
+wrangler.jsonc          -- Cloudflare Workers config (static assets, DO, text modules)
+http.ts / vercel.json   -- Alternative Vercel serverless deployment
+scripts/copy-viewer-assets.mjs -- Copies examples + bench models into the build
 ```
 
 ## API Reference
@@ -380,6 +434,9 @@ Key exports from `nabab` (via `src/lib/index.ts`):
 ## Contributing
 
 ```bash
+# Lint
+npm run lint
+
 # Run tests
 npm test
 
@@ -394,6 +451,9 @@ npx tsx bench/results/run-full-bench.ts
 
 # Start development viewer
 npm run dev
+
+# Deploy viewer + MCP server to Cloudflare Workers
+npm run deploy
 ```
 
 ### Adding a new benchmark model
