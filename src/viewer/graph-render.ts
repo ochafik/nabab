@@ -176,8 +176,19 @@ export function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Dist
   const contentG = svg.append('g');
   _zoomBehavior = d3.zoom<SVGSVGElement, unknown>()
     .scaleExtent([0.1, 4])
+    // Only ctrl/cmd+wheel starts a wheel *zoom* gesture (that is also how
+    // browsers report trackpad pinch). Plain wheel pans, handled below.
+    // Drag and touch gestures keep d3-zoom's default filter.
+    .filter(ev => ev.type === 'wheel' ? (ev.ctrlKey || ev.metaKey) : (!ev.ctrlKey || ev.type === 'wheel') && !ev.button)
     .on('zoom', (ev) => contentG.attr('transform', ev.transform));
   svg.call(_zoomBehavior);
+  // Scroll to pan (both axes; trackpads give deltaX for horizontal).
+  svg.on('wheel.zoompan', (ev: WheelEvent) => {
+    if (ev.ctrlKey || ev.metaKey) return; // zoom: handled by d3-zoom above
+    ev.preventDefault();
+    const k = ev.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : ev.deltaMode === WheelEvent.DOM_DELTA_PAGE ? 100 : 1;
+    _zoomBehavior!.translateBy(svg, -ev.deltaX * k, -ev.deltaY * k);
+  });
   svg.on('click', (ev) => { if (ev.target === svg.node()) clearSelection(); });
   // Restore previous zoom transform
   if (_savedTransform !== d3.zoomIdentity) {
