@@ -9,7 +9,7 @@ export function minimumSpanningTree<V, E>(graph: UndirectedGraph<V, E>, isLessTh
   let heap = Heap.fromArray<Edge<E, V>>(allEdges, (a, b) => isLessThan(a.value!, b.value!));
   let forest = Forest.plant(graph.vertices);
 
-  let edges: Edge<E, V>[] = [];
+  const edges: Edge<E, V>[] = [];
   while (forest.size > 1 && heap) {
     const [edge, heapRest] = heap.remove();
     heap = heapRest;

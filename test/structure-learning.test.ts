@@ -209,7 +209,7 @@ describe('learnStructure', () => {
     const n = result.variables.length;
     const inDegree = new Array(n).fill(0);
     for (const cpt of result.cpts) {
-      for (const parent of cpt.parents) {
+      for (const _parent of cpt.parents) {
         inDegree[nameToIdx.get(cpt.variable.name)!]++;
       }
     }

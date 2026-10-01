@@ -6,8 +6,8 @@ import type { Variable, CPT, Evidence, LikelihoodEvidence, Distribution } from '
 import { parseCSV, learnStructure } from '../lib/structure-learning.js';
 import { toXmlBif } from '../lib/xmlbif-writer.js';
 import { toJSON } from '../lib/json-export.js';
-import { analyticSensitivity, variableInfluenceMap, topInfluentialAnalytic, type AnalyticSensitivityResult } from '../lib/analytic-sensitivity.js';
-import { valueOfInformation, multiQueryVOI, type VOIResult } from '../lib/voi.js';
+import { analyticSensitivity, variableInfluenceMap, type AnalyticSensitivityResult } from '../lib/analytic-sensitivity.js';
+import { multiQueryVOI, type VOIResult } from '../lib/voi.js';
 
 // Compile-time flag: set to true by vite.config.mcp.ts, false otherwise.
 declare const __MCP_APP__: boolean;
@@ -332,7 +332,6 @@ document.addEventListener('keydown', (e) => {
   if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'SELECT') return;
   e.preventDefault();
   const names = [...selectedNodes];
-  const allOn = names.every(n => observationEnabled.has(n));
   const allOff = names.every(n => !observationEnabled.has(n));
   for (const name of names) {
     const v = network?.getVariable(name);
@@ -466,8 +465,8 @@ function autoLayout() {
     for (const p of cpt.parents) g.setEdge(p.name, cpt.variable.name);
   dagre.layout(g);
   const c = document.getElementById('graph-container')!;
-  const gw = (g.graph() as any).width ?? c.clientWidth;
-  const gh = (g.graph() as any).height ?? c.clientHeight;
+  const gw = g.graph().width ?? c.clientWidth;
+  const gh = g.graph().height ?? c.clientHeight;
   const ox = Math.max(0, (c.clientWidth - gw) / 2);
   const oy = Math.max(0, (c.clientHeight - gh) / 2);
   for (const v of network.variables) {

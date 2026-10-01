@@ -15,6 +15,8 @@ export interface NetworkData {
 
 export type NababCommand = { type: 'update'; data: NetworkData };
 
+import type { Redis } from '@upstash/redis';
+
 export interface CommandQueue {
   enqueue(viewUUID: string, cmd: NababCommand): Promise<void>;
   poll(viewUUID: string, timeoutMs?: number): Promise<NababCommand[]>;
@@ -70,7 +72,7 @@ export function createRedisQueue(): CommandQueue | null {
   if (!url || !token) return null;
 
   // Dynamic import to avoid requiring @upstash/redis when not needed
-  let redis: any = null;
+  let redis: Redis | null = null;
   const getRedis = async () => {
     if (!redis) {
       const { Redis } = await import('@upstash/redis');

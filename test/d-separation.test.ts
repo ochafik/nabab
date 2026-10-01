@@ -275,7 +275,7 @@ describe('markovBlanket', () => {
 
   describe('Markov blanket implies d-separation from non-blanket', () => {
     // A → B → C → D
-    const { network, vars } = buildNetwork([
+    const { network } = buildNetwork([
       ['B', ['A']],
       ['C', ['B']],
       ['D', ['C']],

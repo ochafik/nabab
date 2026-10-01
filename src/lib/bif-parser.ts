@@ -39,7 +39,7 @@ function extractBlocks(text: string, blockType: string): { header: string; body:
 
     // Find matching closing brace
     let depth = 0;
-    let start = i;
+    const start = i;
     while (i < text.length) {
       if (text[i] === '{') depth++;
       else if (text[i] === '}') {

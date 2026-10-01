@@ -93,7 +93,7 @@ function splitCSVLine(line: string, delim: string): string[] {
 /**
  * Compute BIC score for a given network structure and data.
  */
-export function computeBIC(data: DataColumn[], cpts: CPT[], variables: Variable[]): number {
+export function computeBIC(data: DataColumn[], cpts: CPT[], _variables: Variable[]): number {
   const n = data[0].values.length;
   const colIndex = new Map<string, DataColumn>();
   for (const col of data) colIndex.set(col.name, col);
@@ -401,7 +401,7 @@ export function learnStructure(data: DataColumn[], options?: LearnOptions): Pars
   }
 
   /** Recompute total score after changing parents of a single node. */
-  function recomputeLocalScore(adj: boolean[][], changedNode: number, oldTotal: number): number {
+  function recomputeLocalScore(adj: boolean[][], _changedNode: number, _oldTotal: number): number {
     // Subtract the old local score for changedNode, add the new one
     // We need the old parents to subtract; for simplicity, recompute all
     // (This is still efficient because localBIC is O(n) per node)
@@ -595,7 +595,6 @@ export function learnStructureGRaSP(data: DataColumn[], options?: LearnOptions):
     return h;
   }
 
-  let bestPerm: number[] = [];
   let bestResult = { total: -Infinity, parents: [] as number[][], scores: [] as number[] };
 
   // Simple seeded PRNG for reproducible restarts
@@ -654,7 +653,6 @@ export function learnStructureGRaSP(data: DataColumn[], options?: LearnOptions):
 
     if (current.total > bestResult.total) {
       bestResult = current;
-      bestPerm = [...perm];
     }
   }
 

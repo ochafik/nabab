@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { BayesianNetwork } from '../src/lib/network.js';
 import { buildDirectedGraph, buildJunctionTree, moralize, triangulate, findMaximalCliques } from '../src/lib/graph.js';
+import type { Variable } from '../src/lib/types.js';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
@@ -9,7 +10,7 @@ const dogProblemXml = readFileSync(resolve(__dirname, '../src/example.xmlbif'), 
 describe('Triangulation quality', () => {
   it('dog-problem produces 3 cliques (not 1 giant clique)', () => {
     const net = BayesianNetwork.fromXmlBif(dogProblemXml);
-    const edges: Array<[any, any]> = [];
+    const edges: Array<[Variable, Variable]> = [];
     for (const cpt of net.cpts) {
       for (const parent of cpt.parents) {
         edges.push([parent, cpt.variable]);
@@ -31,7 +32,7 @@ describe('Triangulation quality', () => {
 
   it('junction tree has correct structure', () => {
     const net = BayesianNetwork.fromXmlBif(dogProblemXml);
-    const edges: Array<[any, any]> = [];
+    const edges: Array<[Variable, Variable]> = [];
     for (const cpt of net.cpts) {
       for (const parent of cpt.parents) {
         edges.push([parent, cpt.variable]);

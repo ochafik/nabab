@@ -7,7 +7,7 @@
  * Uses finite differences: perturb each parameter by ±epsilon,
  * renormalize the row, rerun inference, measure the change.
  */
-import type { Variable, CPT, Evidence, Distribution } from './types.js';
+import type { Variable, CPT, Evidence } from './types.js';
 import { BayesianNetwork } from './network.js';
 
 export interface SensitivityResult {

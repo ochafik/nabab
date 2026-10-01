@@ -8,13 +8,13 @@ export type JunctionTree<V> = UndirectedGraph<Clique<V>, Separator<V>>;
 export function buildJunctionTree<V>(graph: DirectedGraph<V, {}>, isLessThan: <T>(a: T, b: T) => boolean): JunctionTree<V> {
   // console.log(`GRAPH: ${graph}`);
 
-  let moralized = moralize(graph, isLessThan);
+  const moralized = moralize(graph, isLessThan);
   // console.log(`MORAL GRAPH: ${moralized}`);
 
-  let triangulated = triangulate(moralized);
+  const triangulated = triangulate(moralized);
   // console.log(`TRIANGULAR GRAPH: ${triangulated}`);
 
-  let cliques = growCliques<V, {}>(triangulated, isLessThan);
+  const cliques = growCliques<V, {}>(triangulated, isLessThan);
   // console.log(`CLIQUES: ${cliques}`);
 
   let cliquesByVertex = new MultiMap<V, Clique<V>>();
@@ -22,29 +22,29 @@ export function buildJunctionTree<V>(graph: DirectedGraph<V, {}>, isLessThan: <T
       c.vertices.forEach((v: V) =>
           cliquesByVertex = cliquesByVertex.add(v, c)));
 
-  let edges: Edge<Separator<V>, Clique<V>>[] = [];
-  let separators = Immutable.Set<Separator<V>>();
+  const edges: Edge<Separator<V>, Clique<V>>[] = [];
+  const separators = Immutable.Set<Separator<V>>();
   cliques.forEach((clique: Clique<V>) => {
-    let neighbourCliques: Immutable.Set<Clique<V>> =
+    const neighbourCliques: Immutable.Set<Clique<V>> =
         clique.neighbours.flatMap((n: V) => cliquesByVertex.get(n)).toSet();
 
     neighbourCliques.forEach((neighbourClique: Clique<V>) => {
-      let separator = clique.vertices.intersect(neighbourClique.vertices);
-      let newSeparators = separators.add(separator);
+      const separator = clique.vertices.intersect(neighbourClique.vertices);
+      const newSeparators = separators.add(separator);
       if (newSeparators !== separators) {
         edges.push(new Edge({from: clique, to: neighbourClique, value: separator}));
       }
     });
   });
 
-  let junctionGraph = UndirectedGraph.empty<Clique<V>, Separator<V>>(isLessThan).add({
+  const junctionGraph = UndirectedGraph.empty<Clique<V>, Separator<V>>(isLessThan).add({
     vertices: cliques.toArray(),
     edges: edges
   });
   // console.log(`JUNCTION GRAPH: ${junctionGraph}`);
 
   // let junctionTree = junctionGraph;
-  let junctionTree = minimumSpanningTree<Clique<V>, Separator<V>>(junctionGraph, (a, b) => a.size > b.size);
+  const junctionTree = minimumSpanningTree<Clique<V>, Separator<V>>(junctionGraph, (a, b) => a.size > b.size);
   //console.log(`JUNCTION TREE: ${junctionTree}`);
   // console.log(`JUNCTION TREE: ${junctionTree.vertices.size}  `);
 

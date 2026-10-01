@@ -51,7 +51,7 @@ export class DirectedGraph<V, E> {
     add({vertices = [], edges = []}: {vertices?: V[], edges?: Edge<E, V>[]}): DirectedGraph<V, E> {
         // if (!edges.every(e => e instanceof Edge)) throw '';
 
-        let newVertices = this.vertices.union(vertices);
+        const newVertices = this.vertices.union(vertices);
         let newOutgoingEdges = this.outgoingEdges;
         let newIncomingEdges = this.incomingEdges;
         let newDestinations = this.destinations;
@@ -68,7 +68,7 @@ export class DirectedGraph<V, E> {
     remove({vertices = [], edges = []}: {vertices?: V[], edges?: Edge<E, V>[]}): DirectedGraph<V, E> {
         // if (!edges.every(e => e instanceof Edge)) throw '';
 
-        let newVertices = this.vertices.subtract(vertices);
+        const newVertices = this.vertices.subtract(vertices);
         let newOutgoingEdges = this.outgoingEdges;
         let newIncomingEdges = this.incomingEdges;
         let newDestinations = this.destinations;

@@ -29,7 +29,7 @@ export class Forest<V> {
 
   merge(a: Tree<V>, b: Tree<V>) {
     const merged = a.union(b);
-    let treeByVertexBuilder = this.treeByVertex.asMutable();
+    const treeByVertexBuilder = this.treeByVertex.asMutable();
     merged.forEach((v: V) => treeByVertexBuilder.set(v, merged));
     return new Forest(
         this.trees.asMutable().remove(a).remove(b).add(merged).toSet(),

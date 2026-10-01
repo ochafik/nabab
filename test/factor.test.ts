@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   createFactor,
-  constantFactor,
   cptToFactor,
   multiplyFactors,
   marginalize,

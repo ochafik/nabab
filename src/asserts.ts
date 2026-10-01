@@ -1,6 +1,6 @@
 import * as Immutable from 'immutable';
 
-export let assertsEnabled = true;
+export const assertsEnabled = true;
 
 export function assert(condition: (boolean | (() => boolean)), message?: (string | (() => string))): void {
   if (!assertsEnabled) return;

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { causalDiscovery } from '../src/lib/causal-discovery.js';
-import { learnStructure, learnStructureGES, computeBIC } from '../src/lib/structure-learning.js';
+import { causalDiscovery, type CausalAlgorithm } from '../src/lib/causal-discovery.js';
+import { learnStructure, learnStructureGES } from '../src/lib/structure-learning.js';
 import { BayesianNetwork } from '../src/lib/network.js';
 import type { Variable, CPT } from '../src/lib/types.js';
 import type { DataColumn } from '../src/lib/structure-learning.js';
@@ -306,7 +306,7 @@ describe('causalDiscovery - edge cases', () => {
 
   it('throws on unknown algorithm', () => {
     expect(() =>
-      causalDiscovery(chainData, { algorithm: 'unknown' as any }),
+      causalDiscovery(chainData, { algorithm: 'unknown' as CausalAlgorithm }),
     ).toThrow('unknown algorithm');
   });
 

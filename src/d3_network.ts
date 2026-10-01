@@ -8,10 +8,10 @@ import {mapFromKeyValues} from './collections';
 export function drawNetwork(net: Network) {
   // See http://bl.ocks.org/sathomas/11550728
 
-  var width = '100%',
+  const width = '100%',
       height = '100%';
       
-  let variables = net.likelihoods.keySeq().toArray();
+  const variables = net.likelihoods.keySeq().toArray();
   let nodesMap = Immutable.Map<Variable, d3.layout.force.Node>();
   variables.forEach((v, i) => {
     nodesMap = nodesMap.set(v, {
@@ -20,8 +20,8 @@ export function drawNetwork(net: Network) {
       y: v.position!.y,
     });
   });
-  let nodes = nodesMap.valueSeq().toArray();
-  let links: d3.layout.force.Link<d3.layout.force.Node>[] =
+  const nodes = nodesMap.valueSeq().toArray();
+  const links: d3.layout.force.Link<d3.layout.force.Node>[] =
       Immutable.Seq.of(...variables).flatMap((v: Variable) =>
           Immutable.Seq.of(...net.likelihoods.get(v).dependencies).map((d: Variable) =>
               ({
@@ -31,11 +31,11 @@ export function drawNetwork(net: Network) {
 
   d3.select('body').selectAll('svg').remove();
 
-  var svg = d3.select('body').append('svg')
+  const svg = d3.select('body').append('svg')
       .attr('width', width)
       .attr('height', height);
 
-  var defs = svg.append("defs")
+  const defs = svg.append("defs")
 
   defs.append("marker")
         .attr("id", "arrow")

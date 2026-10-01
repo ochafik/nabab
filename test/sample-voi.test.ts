@@ -108,7 +108,7 @@ describe('sampledCriticality', () => {
 
   it('matches exact conditional drops and sorts by drop', () => {
     const r = forwardSample(asia.variables, asia.cpts, N, { seed: 7 });
-    const crit = sampledCriticality(r, names, 'dysp', 'yes', v => 'no');
+    const crit = sampledCriticality(r, names, 'dysp', 'yes', _v => 'no');
     const pBase = infer(asia.variables, asia.cpts).posteriors.get(asia.getVariable('dysp')!)!.get('yes')!;
     for (const c of crit) {
       expect(c.nullOutcome).toBe('no');

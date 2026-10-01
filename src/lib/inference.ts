@@ -106,7 +106,6 @@ function passMessage(
   const key = sepKey(iSource, iDest);
   const oldSepPotential = separatorPotentials.get(key);
 
-  const sourceNodes = new Set(cliques[iSource]);
   const destNodes = new Set(cliques[iDest]);
 
   // Variables in source but not in destination → marginalize out
@@ -324,7 +323,7 @@ export function infer(
   const posteriors = new Map<Variable, Distribution>();
   for (const v of variables) {
     // Find a clique containing this variable and extract its marginal
-    for (const [i, potential] of cliquePotentials) {
+    for (const [, potential] of cliquePotentials) {
       if (potential.variables.includes(v)) {
         posteriors.set(v, extractDistribution(potential, v));
         break;

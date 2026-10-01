@@ -41,7 +41,7 @@ export class UndirectedGraph<V, E> {
         return UndirectedGraph.empty<V, E>(this.isLessThan);
     }
     add({vertices = [], edges = []}: {vertices?: V[], edges?: Edge<E, V>[]}): UndirectedGraph<V, E> {
-        let newVertices = this.vertices.union(vertices);
+        const newVertices = this.vertices.union(vertices);
         let newEdges = this.edgesByVertex;
         let newNeighbours = this.neighbours;
 
@@ -53,7 +53,7 @@ export class UndirectedGraph<V, E> {
         return new UndirectedGraph<V, E>(this.isLessThan, newVertices, newEdges, newNeighbours);
     }
     remove({vertices = [], edges = []}: {vertices?: V[], edges?: Edge<E, V>[]}): UndirectedGraph<V, E> {
-        let newVertices = this.vertices.union(vertices);
+        const newVertices = this.vertices.union(vertices);
         let newEdges = this.edgesByVertex;
         let newNeighbours = this.neighbours;
 

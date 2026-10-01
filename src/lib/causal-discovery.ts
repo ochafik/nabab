@@ -18,7 +18,6 @@ import {
   GSquareTest,
   BDeuScore,
   type GraphShape,
-  type EdgeDescriptor,
 } from '@kanaries/causal';
 import type { Variable, CPT } from './types.js';
 import type { ParsedNetwork } from './xmlbif-parser.js';
@@ -59,7 +58,6 @@ function encodeData(data: DataColumn[]): {
   matrix: DenseMatrix;
   variables: Variable[];
 } {
-  const numRows = data[0].values.length;
   const variables: Variable[] = [];
   const columns: number[][] = [];
 

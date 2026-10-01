@@ -21,7 +21,6 @@ import {
   cptToFactor,
   multiplyFactors,
   marginalize,
-  normalizeFactor,
   applyEvidence,
   applyLikelihood,
   extractDistribution,

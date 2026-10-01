@@ -5,7 +5,7 @@ import {
   averageCausalEffect,
   mutilateNetwork,
 } from '../src/lib/index.js';
-import type { Variable, CPT, Evidence } from '../src/lib/types.js';
+import type { Variable, CPT } from '../src/lib/types.js';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 

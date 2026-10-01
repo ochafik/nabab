@@ -27,8 +27,6 @@ import type { Variable } from '../src/lib/types.js';
 const A: Variable = { name: 'A', outcomes: ['a0', 'a1'] };
 const B: Variable = { name: 'B', outcomes: ['b0', 'b1', 'b2'] };
 const C: Variable = { name: 'C', outcomes: ['c0', 'c1'] };
-const D: Variable = { name: 'D', outcomes: ['d0', 'd1', 'd2', 'd3'] };
-
 beforeAll(async () => {
   await ensureBackend();
 });
@@ -45,7 +43,7 @@ function randomValues(n: number): Float64Array {
 }
 
 /** Assert two Float64Arrays are element-wise close. */
-function expectClose(actual: Float64Array, expected: Float64Array, tol = 1e-5) {
+function expectClose(actual: Float64Array, expected: Float64Array, _tol = 1e-5) {
   expect(actual.length).toBe(expected.length);
   for (let i = 0; i < actual.length; i++) {
     expect(actual[i]).toBeCloseTo(expected[i], 4);

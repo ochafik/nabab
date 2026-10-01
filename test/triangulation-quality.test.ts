@@ -8,7 +8,6 @@ import {
   triangulate,
   eliminate,
   buildJunctionTree,
-  estimateJunctionTreeCost,
   type UndirectedGraph,
   type JunctionTree,
   type EliminationHeuristic,
@@ -442,7 +441,7 @@ describe('Value demonstration: min-fill beats a naive (input-order) elimination'
     const minDeg = estimateInferenceCost(variables, cpts, { eliminationHeuristic: 'min-degree' });
     const minFill = estimateInferenceCost(variables, cpts, { eliminationHeuristic: 'min-fill' });
 
-    // eslint-disable-next-line no-console
+     
     console.log(
       `\n  Hub network (${variables.length} nodes, ternary):\n` +
       `    input-order : treewidth=${bad.treewidth}  maxCliqueEntries=${bad.maxCliqueEntries.toExponential(2)}\n` +

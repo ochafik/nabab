@@ -41,7 +41,7 @@ export function* growClique<V, E extends Edge<any, V>>(clique: Clique<V>, isLess
   let isMaximal = true;
   const vertices = clique.vertices;
   const graph = clique.graph;
-  for (let n of clique.neighbours.toArray()) {
+  for (const n of clique.neighbours.toArray()) {
     if (vertices.every((v: V) => graph.hasEdge(v, n))) {
       isMaximal = false;
       if (vertices.every((v: V) => isLessThan(v, n))) {

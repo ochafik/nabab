@@ -2,19 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { BayesianNetwork } from '../src/lib/network.js';
 import { infer } from '../src/lib/inference.js';
 import type { Variable, CPT } from '../src/lib/types.js';
-import { readFileSync } from 'fs';
-import { resolve } from 'path';
-
-// Dog-problem XMLBIF from the test fixtures
-const dogProblemXml = readFileSync(
-  resolve(__dirname, '../src/example.xmlbif'),
-  'utf-8',
-);
-
-// Node.js DOM parser
-function makeParser() {
-  // Use a minimal DOM parser for tests
-}
 
 describe('Inference', () => {
   it('computes priors for simple 2-node network', () => {

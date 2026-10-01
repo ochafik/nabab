@@ -11,7 +11,6 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { BayesianNetwork } from '../src/lib/network.js';
 import { CachedInferenceEngine } from '../src/lib/cached-inference.js';
 import { WorkerInferenceEngine } from '../src/lib/worker-inference.js';
-import type { WorkerInferenceResult } from '../src/lib/worker-inference.js';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 

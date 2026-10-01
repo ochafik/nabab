@@ -9,7 +9,6 @@ import {
   createFactor,
   multiplyFactors,
   marginalize,
-  tableSize,
 } from '../src/lib/factor.js';
 import type { Variable } from '../src/lib/types.js';
 
@@ -20,7 +19,7 @@ const B: Variable = { name: 'B', outcomes: ['b0', 'b1', 'b2'] };
 const C: Variable = { name: 'C', outcomes: ['c0', 'c1'] };
 const D: Variable = { name: 'D', outcomes: ['d0', 'd1', 'd2'] };
 
-function expectClose(actual: Float64Array, expected: Float64Array, tol = 1e-10) {
+function expectClose(actual: Float64Array, expected: Float64Array, _tol = 1e-10) {
   expect(actual.length).toBe(expected.length);
   for (let i = 0; i < actual.length; i++) {
     expect(actual[i]).toBeCloseTo(expected[i], 10);

@@ -107,9 +107,6 @@ function computeSHD(
   let missing = 0;
   let reversed = 0;
 
-  // Track which pairs we've already processed (for undirected handling)
-  const processed = new Set<string>();
-
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
       const ni = nodes[i];
@@ -125,7 +122,6 @@ function computeSHD(
       const refIsUndirected = refIJ === 1 && refJI === 1;
       const refIsDirectedIJ = refIJ === 1 && refJI === 0;
       const refIsDirectedJI = refJI === 1 && refIJ === 0;
-      const refHasEdge = refIJ === 1 || refJI === 1;
       const learnedHasIJ = learnedIJ === 1;
       const learnedHasJI = learnedJI === 1;
       const learnedHasEdge = learnedHasIJ || learnedHasJI;

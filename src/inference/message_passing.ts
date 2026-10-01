@@ -7,7 +7,7 @@ import * as Immutable from 'immutable';
 
 export function computePotentials<V, E>(graph: DirectedGraph<V, E>, junctionTree: JunctionTree<V>): [Immutable.Map<Clique<V>, Potential<V>>, Immutable.Map<Separator<V>, Potential<V>>] {
   // Initialize clique potentials.
-  let cliquePotentials = Immutable.Map<Clique<V>, Potential<V>>().withMutations(m => {
+  const cliquePotentials = Immutable.Map<Clique<V>, Potential<V>>().withMutations(m => {
     let unassignedVariables = graph.vertices;
 
     function assign(variable: V): boolean {
@@ -41,7 +41,7 @@ export function computePotentials<V, E>(graph: DirectedGraph<V, E>, junctionTree
       throw new Error(`Found remaining unassignedVariables: ${unassignedVariables}`);
     }
   });
-  let separatorPotentials = Immutable.Map<Separator<V>, Potential<V>>();
+  const separatorPotentials = Immutable.Map<Separator<V>, Potential<V>>();
 
   
   // TODO: message passing
@@ -50,7 +50,7 @@ export function computePotentials<V, E>(graph: DirectedGraph<V, E>, junctionTree
 } 
 
 function getNeighbourCliques<V>(junctionTree: JunctionTree<V>): MultiMap<Clique<V>, Clique<V>> {
-    let cliquesByVertex = MultiMap.build<V, Clique<V>>(builder =>
+    const cliquesByVertex = MultiMap.build<V, Clique<V>>(builder =>
         junctionTree.vertices.forEach((clique: Clique<V>) =>
             clique.vertices.forEach((v: V) => builder.add(v, clique))));
     
@@ -62,7 +62,7 @@ function getNeighbourCliques<V>(junctionTree: JunctionTree<V>): MultiMap<Clique<
 
 function globalPropagation<V>(source: Clique<V>, junctionTree: JunctionTree<V>, cliquePotentials: Immutable.Map<Clique<V>, Potential<V>>, separatorsPotentials: Map<Edge<Separator<V>, Clique<V>>, Potential<V>>): any {
   const cliquesNeighbours = getNeighbourCliques(junctionTree);
-  let markedCliques = Immutable.Set<Clique<V>>();
+  const markedCliques = Immutable.Set<Clique<V>>();
   
   //printCliquePotentials("Initial clique potentials", nodeSetList, cliquePotentials);
   

@@ -11,7 +11,7 @@
  */
 import * as tf from '@tensorflow/tfjs-core';
 import type { Variable } from './types.js';
-import { createFactor, tableSize, type Factor } from './factor.js';
+import { createFactor, type Factor } from './factor.js';
 
 let backendInitialized = false;
 

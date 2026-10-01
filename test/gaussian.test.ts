@@ -269,7 +269,7 @@ describe('end-to-end: continuous → discrete pipeline', () => {
 
     // Infer: with no evidence, posteriors should sum to 1
     const priors = bn.priors();
-    for (const [v, dist] of priors) {
+    for (const [, dist] of priors) {
       let sum = 0;
       for (const p of dist.values()) sum += p;
       expect(sum).toBeCloseTo(1, 5);

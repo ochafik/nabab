@@ -5,7 +5,7 @@ import {
   mostInfluentialParameters,
   tornadoAnalysis,
 } from '../src/lib/sensitivity.js';
-import type { Variable, CPT } from '../src/lib/types.js';
+import type { Variable } from '../src/lib/types.js';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 

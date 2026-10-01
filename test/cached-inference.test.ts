@@ -10,7 +10,7 @@
 import { describe, it, expect } from 'vitest';
 import { BayesianNetwork } from '../src/lib/network.js';
 import { CachedInferenceEngine } from '../src/lib/cached-inference.js';
-import type { Variable, CPT } from '../src/lib/types.js';
+import type { Variable } from '../src/lib/types.js';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 

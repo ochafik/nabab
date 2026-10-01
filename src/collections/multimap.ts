@@ -57,7 +57,7 @@ export class MultiMapBuilder<K, V> {
     set.add(value);
   }
   remove(key: K, value: V): void {
-    let set = this.map.get(key);
+    const set = this.map.get(key);
     if (set != null) set.remove(value);
   }
   build(): MultiMap<K, V> {

@@ -265,7 +265,6 @@ export function loopyBeliefPropagation(
         // Enumerate all assignments to the factor's variables.
         // We use a simple odometer over the scope dimensions.
         const indices = new Int32Array(nScope);
-        const strides = f.strides;
 
         for (let flatIdx = 0; flatIdx < fSize; flatIdx++) {
           // value of factor at this assignment

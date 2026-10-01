@@ -27,7 +27,7 @@ function quote(s: string): string {
 const positionPropertyRegExp = /\((\d+)\s*,\s*(\d+)\)/;
 function parsePositionProperty(value?: string): ({x: number, y: number} | undefined) {
   if (value == null) return undefined;
-  let [, x, y] = [...positionPropertyRegExp.exec(value)!] as any;
+  const [, x, y] = [...positionPropertyRegExp.exec(value)!] as any;
   return x != null && y != null ? {x: Number(x), y: Number(y)} : undefined;
 }
 
@@ -57,17 +57,17 @@ export function parseXmlBif(content: string) {
   const doc = new DOMParser().parseFromString(content, "text/xml");
 
   // XMLBIF: http://www.cs.cmu.edu/~fgcozman/Research/InterchangeFormat/
-  let graph = DirectedGraph.empty<string, {}>();
+  const graph = DirectedGraph.empty<string, {}>();
 
   let variables = Immutable.Map<string, Variable>();
-  let likelihoods: VariableLikelihood[] = [];
+  const likelihoods: VariableLikelihood[] = [];
   // let edges = [];
 
   function select(n: Element | Document, tagName: string): Element[] {
     return [...n.getElementsByTagName(tagName)];
   }
 
-  for (let v of select(doc, 'VARIABLE')) {
+  for (const v of select(doc, 'VARIABLE')) {
     const name = getText(single(select(v, 'NAME')));
     const outcomes = select(v, 'OUTCOME').map(getText);
     const properties = mapFromKeyValues(select(v, 'PROPERTY').map(getText).map(parseKeyValue));
@@ -82,10 +82,10 @@ export function parseXmlBif(content: string) {
     if (v == null) throw new Error(`No variable named ${quote(name)} (known variables: ${variables.keySeq().map(quote).join(', ')})'` )
     return v;
   }
-  for (let d of select(doc, 'DEFINITION')) {
+  for (const d of select(doc, 'DEFINITION')) {
     const variable = getVariable(getText(single(select(d, 'FOR'))));
     const dependencies = select(d, 'GIVEN').map(getText).map(getVariable);
-    let distributions = readDistributions(variable, dependencies, getText(single(select(d, 'TABLE'))).trim().split(/\s+/).map(Number));
+    const distributions = readDistributions(variable, dependencies, getText(single(select(d, 'TABLE'))).trim().split(/\s+/).map(Number));
     likelihoods.push(new VariableLikelihood({variable, dependencies, distributions}));
   }
 

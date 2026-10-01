@@ -9,7 +9,7 @@ export class Heap<T> {
       readonly value: T,
       readonly left?: Heap<T>,
       readonly right?: Heap<T>) {
-    var size = 1;
+    let size = 1;
     if (left) size += left.size;
     if (right) size += right.size;
     this.size = size;
@@ -22,7 +22,7 @@ export class Heap<T> {
 
     // TODO(ochafik): Correct heapify support for linear building time.
     const [first, ...rest] = values;
-    var heap = new Heap(isLessThan, first);
+    let heap = new Heap(isLessThan, first);
     for (const value of rest) {
       heap = heap.add(value);
     }

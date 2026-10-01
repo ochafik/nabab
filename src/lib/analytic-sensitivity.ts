@@ -144,7 +144,7 @@ export function analyticSensitivity(
         // Range: evaluate curve at endpoints and find extrema
         const v0 = evalCurve(coeffs, 0);
         const v1 = evalCurve(coeffs, 1);
-        let minV = Math.min(v0, v1), maxV = Math.max(v0, v1);
+        const minV = Math.min(v0, v1), maxV = Math.max(v0, v1);
         // Check if the rational function has an extremum in (0,1):
         // extremum at θ = -1/c (if c ≠ 0), but that's where denominator = 0 (asymptote, not extremum)
         // Actually for (aθ+b)/(cθ+1), the function is monotonic when ad-bc has constant sign.

@@ -7,7 +7,7 @@
  *
  * Variables with higher VOI are more worth observing next.
  */
-import type { Evidence, Variable } from './types.js';
+import type { Evidence } from './types.js';
 import { BayesianNetwork } from './network.js';
 import { CachedInferenceEngine } from './cached-inference.js';
 import { dConnectedVars } from './d-separation.js';
