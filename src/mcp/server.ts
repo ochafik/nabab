@@ -1,19 +1,18 @@
 #!/usr/bin/env node
 /**
- * MCP server for Nabab Bayesian Network inference.
+ * MCP server factory for Nabab Bayesian Network inference.
  *
- * Supports --stdio (default) and HTTP modes.
+ * Transports live in platform-specific entries:
+ *   - src/mcp/node.ts   (stdio, express HTTP — Node)
+ *   - src/mcp/worker.ts (Cloudflare Workers fetch handler)
  * The `query` tool renders an interactive network viewer (MCP App).
  * The `interact` tool lets the model (and viewer) modify evidence and enqueue updates.
  * The `poll_commands` tool lets the viewer long-poll for server→viewer commands.
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { registerAppTool, registerAppResource, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
 import { z } from 'zod';
-import { readFileSync, readdirSync, existsSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { resolve, join } from 'path';
 import { randomUUID } from 'crypto';
 import { BayesianNetwork } from '../lib/network.js';
@@ -22,34 +21,62 @@ import type { Evidence } from '../lib/types.js';
 import type { CallToolResult, ReadResourceResult } from '@modelcontextprotocol/sdk/types.js';
 import { createQueue, type CommandQueue, type NetworkData } from './commands.js';
 
-// ─── Paths ──────────────────────────────────────────────────────────
+// ─── Assets ─────────────────────────────────────────────────────────
 
-const MCP_APP_HTML = join(import.meta.dirname, '../../dist/mcp/index.html');
-const examplesDir = resolve(import.meta.dirname, '../../../src/main/resources/com/ochafik/math/bayes');
-const localExample = resolve(import.meta.dirname, '../../src/example.xmlbif');
-
-// ─── Helpers ────────────────────────────────────────────────────────
-
-function listExamples(): string[] {
-  try {
-    return readdirSync(examplesDir).filter(f => f.endsWith('.xml') || f.endsWith('.xmlbif'));
-  } catch {
-    return [];
-  }
+/**
+ * Platform-injectable access to bundled files (example networks, app HTML).
+ * Node entries use the filesystem; the Workers entry uses bundled text modules.
+ */
+export interface McpAssets {
+  /** Names of bundled example network files. */
+  listExamples(): string[];
+  /** Read a bundled example by name; null when unknown. */
+  readExample(name: string): string | null;
+  /** Fallback example when a name is not found. */
+  readLocalExample(): string | null;
+  /** Built single-file MCP App viewer HTML; null when not built. */
+  readMcpAppHtml(): string | null;
+  /** Read a local file (file:// sources); null when unsupported. */
+  readFile(path: string): string | null;
 }
 
-function loadExampleFile(name: string): string {
-  return readFileSync(resolve(examplesDir, name), 'utf-8');
+function createNodeAssets(): McpAssets {
+  const dirname = typeof import.meta.dirname === 'string' ? import.meta.dirname : '.';
+  const mcpAppHtml = join(dirname, '../../dist/mcp/index.html');
+  const examplesDir = resolve(dirname, '../../../src/main/resources/com/ochafik/math/bayes');
+  const localExample = resolve(dirname, '../../src/example.xmlbif');
+  const read = (p: string): string | null => {
+    try {
+      return readFileSync(p, 'utf-8');
+    } catch {
+      return null;
+    }
+  };
+  return {
+    listExamples() {
+      try {
+        return readdirSync(examplesDir).filter(f => f.endsWith('.xml') || f.endsWith('.xmlbif'));
+      } catch {
+        return [];
+      }
+    },
+    readExample: name => read(resolve(examplesDir, name)),
+    readLocalExample: () => read(localExample),
+    readMcpAppHtml: () => read(mcpAppHtml),
+    readFile: path => read(path),
+  };
 }
 
 // ─── Server factory ─────────────────────────────────────────────────
 
 export interface CreateServerOptions {
   queue?: CommandQueue;
+  assets?: McpAssets;
 }
 
 export function createServer(opts: CreateServerOptions = {}): McpServer {
   const queue = opts.queue ?? createQueue();
+  const assets = opts.assets ?? createNodeAssets();
 
   // Per-session state
   let currentNetwork: BayesianNetwork | null = null;
@@ -113,7 +140,7 @@ export function createServer(opts: CreateServerOptions = {}): McpServer {
     'List available example Bayesian network files',
     {},
     async () => {
-      const examples = listExamples();
+      const examples = assets.listExamples();
       return {
         content: [{
           type: 'text',
@@ -139,10 +166,9 @@ export function createServer(opts: CreateServerOptions = {}): McpServer {
         if (source.includes('<BIF') || source.includes('<NETWORK')) {
           xmlbif = source;
         } else {
-          try {
-            xmlbif = loadExampleFile(source);
-          } catch {
-            xmlbif = readFileSync(localExample, 'utf-8');
+          xmlbif = assets.readExample(source) ?? assets.readLocalExample() ?? '';
+          if (!xmlbif) {
+            return { content: [{ type: 'text', text: `No example found for "${source}".` }], isError: true };
           }
         }
         currentNetwork = BayesianNetwork.fromXmlBif(xmlbif);
@@ -235,7 +261,7 @@ export function createServer(opts: CreateServerOptions = {}): McpServer {
     description: 'Query posterior probability distributions. Input: a network source (URL or inline XMLBIF/BIF content) and optional evidence. The viewer loads the network from the input args directly (supports streaming via partial input).',
     inputSchema: z.object({
       source: z.string().optional().describe('Network source: a file:// or http(s):// URL to a .bif/.xmlbif file, or inline XMLBIF/BIF content. Omit to query the already-loaded network.'),
-      evidence: z.record(z.string()).optional().describe('Evidence to set: { variableName: outcomeValue }'),
+      evidence: z.record(z.string(), z.string()).optional().describe('Evidence to set: { variableName: outcomeValue }'),
       variables: z.array(z.string()).optional().describe('Variable names to query (omit for all)'),
     }),
     _meta: { ui: { resourceUri } },
@@ -247,7 +273,11 @@ export function createServer(opts: CreateServerOptions = {}): McpServer {
         // URL — fetch it server-side
         if (source.startsWith('file://')) {
           const filePath = decodeURIComponent(source.replace('file://', ''));
-          content = readFileSync(filePath, 'utf-8');
+          const fileContent = assets.readFile(filePath);
+          if (fileContent == null) {
+            return { content: [{ type: 'text', text: `Cannot read local file on this deployment: ${filePath}` }], isError: true };
+          }
+          content = fileContent;
         } else {
           const resp = await fetch(source);
           if (!resp.ok) return { content: [{ type: 'text', text: `Failed to fetch ${source}: ${resp.status}` }], isError: true };
@@ -257,9 +287,8 @@ export function createServer(opts: CreateServerOptions = {}): McpServer {
         content = source;
       } else {
         // Try as example file name
-        try {
-          content = loadExampleFile(source);
-        } catch {
+        content = assets.readExample(source) ?? assets.readLocalExample() ?? '';
+        if (!content) {
           return { content: [{ type: 'text', text: `Unknown source: ${source}` }], isError: true };
         }
       }
@@ -328,11 +357,9 @@ export function createServer(opts: CreateServerOptions = {}): McpServer {
         case 'load_example': {
           if (!name) return { content: [{ type: 'text' as const, text: 'Missing example name.' }], isError: true };
           try {
-            let xmlbif: string;
-            try {
-              xmlbif = loadExampleFile(name);
-            } catch {
-              xmlbif = readFileSync(localExample, 'utf-8');
+            const xmlbif = assets.readExample(name) ?? assets.readLocalExample();
+            if (xmlbif == null) {
+              return { content: [{ type: 'text' as const, text: `No example found for "${name}".` }], isError: true };
             }
             currentNetwork = BayesianNetwork.fromXmlBif(xmlbif);
             currentEvidence = new Map();
@@ -380,104 +407,11 @@ export function createServer(opts: CreateServerOptions = {}): McpServer {
     resourceUri,
     { mimeType: RESOURCE_MIME_TYPE },
     async (): Promise<ReadResourceResult> => {
-      if (!existsSync(MCP_APP_HTML)) {
-        return {
-          contents: [{
-            uri: resourceUri,
-            mimeType: RESOURCE_MIME_TYPE,
-            text: '<html><body><p>MCP App not built. Run: npm run build:mcp</p></body></html>',
-          }],
-        };
-      }
-      const html = readFileSync(MCP_APP_HTML, 'utf-8');
+      const html = assets.readMcpAppHtml()
+        ?? '<html><body><p>MCP App not built. Run: npm run build:mcp</p></body></html>';
       return { contents: [{ uri: resourceUri, mimeType: RESOURCE_MIME_TYPE, text: html }] };
     },
   );
 
   return server;
 }
-
-// ─── Transport modes ────────────────────────────────────────────────
-
-async function startStdio() {
-  const server = createServer();
-  await server.connect(new StdioServerTransport());
-  console.error('Nabab MCP server running on stdio');
-}
-
-async function startHttp() {
-  const { default: express } = await import('express');
-  const { default: cors } = await import('cors');
-
-  const port = parseInt(process.env.PORT ?? '3001', 10);
-  const queue = createQueue();
-  const transports = new Map<string, StreamableHTTPServerTransport>();
-
-  const app = express();
-  app.use(cors());
-  app.use(express.json());
-
-  app.all('/mcp', async (req, res) => {
-    const sessionId = req.headers['mcp-session-id'] as string | undefined;
-    let transport = sessionId ? transports.get(sessionId) : undefined;
-
-    if (transport) {
-      await transport.handleRequest(req, res, req.body);
-      return;
-    }
-
-    if (!sessionId && req.method === 'POST' && isInitializeRequest(req.body)) {
-      transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID(),
-        onsessioninitialized: sid => { transports.set(sid, transport!); },
-      });
-      transport.onclose = () => {
-        const sid = transport!.sessionId;
-        if (sid) transports.delete(sid);
-      };
-      const server = createServer({ queue });
-      await server.connect(transport);
-      await transport.handleRequest(req, res, req.body);
-      return;
-    }
-
-    res.status(400).json({
-      jsonrpc: '2.0',
-      error: { code: -32000, message: sessionId ? 'Session not found' : 'Send initialize first' },
-      id: null,
-    });
-  });
-
-  app.get('/', (_req, res) => {
-    res.type('text/plain').send(
-      `Nabab MCP Server\n\nEndpoint: http://localhost:${port}/mcp\n` +
-      `Redis: ${process.env.UPSTASH_REDIS_REST_URL ? 'connected' : 'not configured (in-memory queue)'}\n`,
-    );
-  });
-
-  const httpServer = app.listen(port, () => {
-    console.log(`Nabab MCP server listening on http://localhost:${port}/mcp`);
-  });
-
-  const shutdown = () => {
-    console.log('\nShutting down...');
-    httpServer.close(() => process.exit(0));
-  };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
-}
-
-// ─── Entry point ────────────────────────────────────────────────────
-
-async function main() {
-  if (process.argv.includes('--stdio')) {
-    await startStdio();
-  } else {
-    await startHttp();
-  }
-}
-
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});

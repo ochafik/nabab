@@ -41,7 +41,7 @@ export default async function handler(req: Req, res: Res): Promise<void> {
 <p>HTTP transport (this deployment):</p>
 <pre style="background:#f4f4f4;padding:12px;border-radius:6px">claude mcp add --transport http nabab ${baseUrl}/mcp</pre>
 <p>stdio transport (local):</p>
-<pre style="background:#f4f4f4;padding:12px;border-radius:6px">cd /path/to/nabab && npm run build:mcp && npx tsx src/mcp/server.ts --stdio</pre>
+<pre style="background:#f4f4f4;padding:12px;border-radius:6px">cd /path/to/nabab && npm run build:mcp && npm run mcp -- --stdio</pre>
 <p style="color:#888;font-size:0.9em">Redis: <strong>${redisStatus}</strong> &middot; Endpoint: <code>${baseUrl}/mcp</code></p>
 </body></html>`);
     return;

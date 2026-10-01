@@ -24,7 +24,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build:mcp": "vite build --config vite.config.mcp.ts",
-    "mcp": "tsx src/mcp/server.ts"
+    "mcp": "tsx src/mcp/node.ts",
+    "deploy:mcp": "npm run build:mcp && wrangler deploy"
   },
   "license": "MIT",
   "author": "Olivier Chafik",
@@ -47,7 +48,8 @@
     "typescript-eslint": "^8.71.0",
     "vite": "^6.0.0",
     "vite-plugin-singlefile": "^2.3.2",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.3",
+    "wrangler": "^4.145.0"
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",
