@@ -21,6 +21,8 @@ export interface BarGeom {
   barH: number;
   /** Label hit area (x range) for the multi-outcome layout, null for the single-slider layout. */
   labelX: [number, number] | null;
+  /** Outcome not drawn (behind "+k more"): zero-size placeholder that keeps `bars[idx]` aligned; never hit. */
+  hidden?: boolean;
 }
 
 export interface NodeGeom {
@@ -51,6 +53,7 @@ export interface Hit {
 /** Find the bar or label under a point in node-local coordinates. */
 export function hitTestNode(node: NodeGeom, x: number, y: number): Hit | null {
   for (const bar of node.bars) {
+    if (bar.hidden) continue;
     if (y < bar.by - 5 || y > bar.by + bar.barH + 5) continue;
     if (x >= bar.bx - 4 && x <= bar.bx + bar.bw + 4) {
       return { node, bar, zone: 'bar', fraction: Math.max(0, Math.min(1, (x - bar.x0) / bar.range)) };

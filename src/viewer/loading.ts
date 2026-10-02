@@ -120,7 +120,7 @@ export async function loadStateFromHash(): Promise<boolean> {
 
     document.getElementById('network-name')!.textContent = S.network!.name;
     if (!state.z) requestFit();
-    if (S.nodePositions.size === 0) autoLayout();
+    if (S.nodePositions.size === 0) await autoLayout();
     else render();
 
     // Restore zoom transform after render creates the SVG

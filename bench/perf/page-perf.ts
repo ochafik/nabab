@@ -7,7 +7,7 @@
  *   npm run perf:page:baseline    record bench/perf/page-timings.json (add --provisional when not run on the CI runner)
  *
  * For each model, in a fresh page (cold: bundle + model fetch + parse + layout + inference + render):
- *   render   ms from navigation start to the first frame in which every node is in the DOM
+ *   render   ms from navigation start to the first frame in which every node is in the DOM with its posteriors
  *   task     longest main-thread task (PerformanceObserver 'longtask', i.e. >= 50 ms) until then
  * and functional checks that catch a blank or broken page: all nodes present, >= 90 % of them inside
  * the viewport (the auto-fit), no page errors, and for networks over the clique budget the
@@ -30,16 +30,16 @@ const CAP_RENDER_MS = 3000;     // navigation -> everything drawn
 const CAP_TASK_MS = 1000;       // longest single main-thread task
 /** Models known to be heavy (measured on a laptop); they get a looser absolute cap, still catching a blow-up. */
 const HEAVY: Record<string, { render: number; task: number }> = {
-  'bench/link.bif': { render: 8000, task: 5000 },
-  'bench/diabetes.bif': { render: 8000, task: 5000 },
-  'bench/pigs.bif': { render: 5000, task: 3000 },
+  'bench/link.bif': { render: 2500, task: 400 },
+  'bench/diabetes.bif': { render: 2500, task: 400 },
+  'bench/pigs.bif': { render: 1500, task: 300 },
 };
 const FACTOR = 2.5;
 const SLACK_MS = 300;
 const RUNS = 3;
 const MIN_VISIBLE = 0.9;
 /** The fit is clamped at a minimum zoom (fit-view.ts MIN_ZOOM), so the biggest graphs overflow the viewport by design. */
-const MIN_VISIBLE_BIG: Record<string, number> = { 'bench/diabetes.bif': 0.4, 'bench/link.bif': 0.8 };
+const MIN_VISIBLE_BIG: Record<string, number> = { 'bench/diabetes.bif': 0.85, 'bench/link.bif': 0.8 };
 
 const DIST = join(ROOT, 'dist', 'viewer');
 const BASELINE = join(import.meta.dirname, 'page-timings.json');
@@ -91,7 +91,7 @@ async function loadOnce(browser: import('playwright').Browser, base: string, spe
       for (const e of list.getEntries()) w.__tasks = Math.max(w.__tasks, e.duration);
     }).observe({ type: 'longtask', buffered: true });
     const poll = () => {
-      if (w.__renderAt < 0 && document.querySelectorAll('.node-g').length >= ${exp.nodes}) { w.__renderAt = performance.now() - (w.__t0 || 0); if (!${spec.kind === 'csv'}) return; }
+      if (w.__renderAt < 0 && document.querySelectorAll('.node-g').length >= ${exp.nodes} && (${exp.structureOnly} || document.getElementById('graph-container').dataset.inferred === '1')) { w.__renderAt = performance.now() - (w.__t0 || 0); if (!${spec.kind === 'csv'}) return; }
       requestAnimationFrame(poll);
     };
     requestAnimationFrame(poll);

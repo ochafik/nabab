@@ -3,7 +3,6 @@
  * render() orchestrator (inference + sensitivity/VOI + persistence).
  */
 import * as d3 from 'd3';
-import dagre from '@dagrejs/dagre';
 import { ImpossibleEvidenceError } from '../lib/evidence.js';
 import { formatProbabilityOfEvidence, evidenceKey } from './preview-logic.js';
 import { analyticSensitivity, variableInfluenceMap } from '../lib/analytic-sensitivity.js';
@@ -23,6 +22,8 @@ import { renderInfoPanel } from './info-panel.js';
 import { boundsOf, computeFit, MIN_ZOOM, MAX_ZOOM, type Fit } from './fit-view.js';
 import { describeInferenceFailure } from './inference-status.js';
 import { DEFAULT_MAX_CLIQUE_ENTRIES } from '../lib/inference.js';
+import { toXmlBif } from '../lib/xmlbif-writer.js';
+import { runLayout } from './layout-client.js';
 import { saveStateToHash, saveStateToLocalStorage } from './persistence.js';
 
 const ARR_LEN = 7; // rendered arrowhead length in px
@@ -37,6 +38,9 @@ const NODE_H_BOOL = 56;
 const NODE_H_BOOL_LABELS = 68;
 const NODE_H_MULTI_BASE = 30;
 const NODE_H_PER_OUTCOME = 24;
+const NODE_H_MORE = 20;  // the "+k more" row of capped nodes
+/** Max outcome rows drawn per node; the others are behind a "+k more" row. */
+const MAX_ROWS = 6;
 
 const BOOL_PATTERNS = /^(true|false|yes|no|t|f|y|n)$/i;
 
@@ -48,63 +52,78 @@ function isSliderVar(v: Variable): boolean {
   return v.outcomes.length === 2;
 }
 
-// Measured text widths — populated at start of each render
+// Measured text widths, computed once per network (canvas measureText: no DOM, no layout).
 let _measuredWidths = new Map<string, number>();
+let _labelColW = new Map<string, number>();
+let _widthsFor: BayesianNetwork | null = null;
+/** Nodes whose capped outcome list is expanded (reset when the network changes). */
+let _expanded = new Set<string>();
 
-/** Measure actual SVG text widths for all variables. */
-function measureTextWidths(
-  svg: d3.Selection<SVGSVGElement, unknown, null, undefined>,
-  net: BayesianNetwork,
-  posteriors: Map<Variable, Distribution>,
-) {
+let _canvasCtx: CanvasRenderingContext2D | null | undefined;
+const _textCache = new Map<string, number>();
+let _fontFamily = '';
+/** Width in px of `text` in the viewer font, as the SVG renders it. */
+function textWidth(text: string, size: number, weight: number): number {
+  const key = `${weight}|${size}|${text}`;
+  const hit = _textCache.get(key);
+  if (hit !== undefined) return hit;
+  if (_canvasCtx === undefined) {
+    _canvasCtx = document.createElement('canvas').getContext('2d');
+    _fontFamily = getComputedStyle(document.body).fontFamily || 'sans-serif';
+  }
+  let w: number;
+  if (_canvasCtx) {
+    _canvasCtx.font = `${weight} ${size}px ${_fontFamily}`;
+    w = _canvasCtx.measureText(text).width;
+  } else {
+    w = text.length * size * 0.56; // no canvas: rough estimate
+  }
+  if (_textCache.size > 50000) _textCache.clear();
+  _textCache.set(key, w);
+  return w;
+}
+
+/** Compute node widths for every variable of `net` (once per network object). */
+function ensureWidths(net: BayesianNetwork): void {
+  if (_widthsFor === net) return;
+  _widthsFor = net;
+  _expanded = new Set();
   _measuredWidths = new Map();
-  const measureG = svg.append('g').attr('opacity', 0);
-
+  _labelColW = new Map();
   for (const v of net.variables) {
-    const dist = posteriors.get(v);
-    // Measure header text
-    let headerText = v.name;
-    if (dist && isSliderVar(v)) {
-      // Measure worst case: longest outcome name + "100%"
-      const longest = v.outcomes[0].length > v.outcomes[1].length ? v.outcomes[0] : v.outcomes[1];
-      headerText += `: 100% ${longest}`;
-    } else if (dist) {
-      const longest = v.outcomes.reduce((a, b) => a.length > b.length ? a : b);
-      headerText += `: 100% ${longest}`;
-    }
-    const headerEl = measureG.append('text')
-      .attr('font-size', '12px').attr('font-weight', '600').text(headerText);
-    const headerW = (headerEl.node() as SVGTextElement).getBBox().width;
+    // Worst case header: name + "100% <longest outcome>"
+    let longest = v.outcomes[0] ?? '';
+    for (const o of v.outcomes) if (o.length > longest.length) longest = o;
+    const headerW = textWidth(`${v.name}: 100% ${longest}`, 12, 600);
 
-    // Measure outcome labels
     let labelsW = 0;
     if (isSliderVar(v) && !isBoolVar(v)) {
-      for (const o of v.outcomes) {
-        const el = measureG.append('text').attr('font-size', '9px').text(o);
-        labelsW = Math.max(labelsW, (el.node() as SVGTextElement).getBBox().width);
-      }
+      for (const o of v.outcomes) labelsW = Math.max(labelsW, textWidth(o, 9, 400));
       labelsW = labelsW * 2 + 60; // both labels + slider gap
     } else if (!isSliderVar(v)) {
-      for (const o of v.outcomes) {
-        const el = measureG.append('text').attr('font-size', '10px').text(o);
-        labelsW = Math.max(labelsW, (el.node() as SVGTextElement).getBBox().width);
-      }
+      for (const o of v.outcomes) labelsW = Math.max(labelsW, textWidth(o, 10, 400));
       labelsW += 100; // slider + percentage column
     }
-
     _measuredWidths.set(v.name, Math.max(NODE_W_MIN, headerW + NODE_PAD, labelsW + 16));
+    _labelColW.set(v.name, v.outcomes.reduce((m, o) => Math.max(m, o.length), 0) * 6.5 + 14);
   }
-
-  measureG.remove();
 }
 
 function nodeW(v: Variable): number {
   return _measuredWidths.get(v.name) ?? NODE_W_MIN;
 }
 
+/** Number of outcome rows drawn for a multi-outcome node (the rest sit behind "+k more"). */
+function isCapped(v: Variable): boolean {
+  return v.outcomes.length > MAX_ROWS + 1;
+}
+function rowCount(v: Variable): number {
+  return isCapped(v) && !_expanded.has(v.name) ? MAX_ROWS : v.outcomes.length;
+}
+
 function nodeH(v: Variable): number {
   if (isSliderVar(v)) return isBoolVar(v) ? NODE_H_BOOL : NODE_H_BOOL_LABELS;
-  return NODE_H_MULTI_BASE + v.outcomes.length * NODE_H_PER_OUTCOME;
+  return NODE_H_MULTI_BASE + rowCount(v) * NODE_H_PER_OUTCOME + (isCapped(v) ? NODE_H_MORE : 0);
 }
 
 let _edgeGroup: d3.Selection<SVGGElement, unknown, null, undefined> | null = null;
@@ -142,7 +161,58 @@ let _fitPending = false;
 /** Fit the view to the graph on the next render (call on fresh network loads only). */
 export function requestFit(): void { _fitPending = true; }
 
+// ─── Level of detail ────────────────────────────────────────────────
+// Big networks are drawn in two levels: full nodes (eye, bars, sliders) only
+// where they can be read (zoomed in, inside the padded viewport); everywhere
+// else a "simple" node (box + title). The set is re-evaluated when a zoom/pan
+// gesture ends (debounced), never on every wheel event.
+const LOD_MIN_VARS = 100;
+const LOD_K = 0.35;
+/** Names drawn in full in the current SVG; null = all of them. */
+let _fullNodes: Set<string> | null = null;
+let _rendering = false;
+let _lastPosteriors: Map<Variable, Distribution> | null = null;
+let _lodTimer: ReturnType<typeof setTimeout> | undefined;
+
+function detailSet(net: BayesianNetwork, T: { x: number; y: number; k: number }, W: number, H: number): Set<string> | null {
+  if (net.variables.length < LOD_MIN_VARS) return null;
+  const full = new Set<string>();
+  if (T.k < LOD_K) return full;
+  const x0 = (-W / 2 - T.x) / T.k, x1 = (W * 1.5 - T.x) / T.k;
+  const y0 = (-H / 2 - T.y) / T.k, y1 = (H * 1.5 - T.y) / T.k;
+  for (const v of net.variables) {
+    const p = S.nodePositions.get(v.name);
+    if (!p) continue;
+    if (p.x + nodeW(v) / 2 >= x0 && p.x - nodeW(v) / 2 <= x1 && p.y + nodeH(v) / 2 >= y0 && p.y - nodeH(v) / 2 <= y1) full.add(v.name);
+  }
+  return full;
+}
+
+function scheduleLodCheck(): void {
+  if (_rendering) return;
+  clearTimeout(_lodTimer);
+  _lodTimer = setTimeout(() => {
+    if (!_svg || !S.network || !_lastPosteriors || _fullNodes === null) return;
+    const c = document.getElementById('graph-container');
+    if (!c) return;
+    const want = detailSet(S.network, d3.zoomTransform(_svg.node()!), c.clientWidth, c.clientHeight);
+    if (want === null) return;
+    const missing = [...want].some(n => !_fullNodes!.has(n));
+    if (missing || (want.size === 0 && _fullNodes.size > 0)) {
+      renderGraph(S.network, _lastPosteriors);
+      resetPreviewAfterRender();
+      reapplyExplain();
+    }
+  }, 120);
+}
+
 export function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distribution>): void {
+  _rendering = true;
+  try { renderGraphImpl(net, posteriors); } finally { _rendering = false; }
+}
+
+function renderGraphImpl(net: BayesianNetwork, posteriors: Map<Variable, Distribution>): void {
+  _lastPosteriors = posteriors;
   const container = document.getElementById('graph-container')!;
   // Preserve zoom transform across re-renders
   if (_svg) _savedTransform = d3.zoomTransform(_svg.node()!);
@@ -152,9 +222,9 @@ export function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Dist
     .style('user-select', 'none');
   const svg = _svg;
   registry.clear();
+  container.dataset.inferred = posteriors.size > 0 ? '1' : '0';
   const defs = svg.append('defs');
-  // Measure text widths to size nodes correctly
-  measureTextWidths(svg, net, posteriors);
+  ensureWidths(net);
 
   // Drop shadow for nodes
   const shadow = defs.append('filter').attr('id', 'node-shadow').attr('x', '-10%').attr('y', '-10%').attr('width', '130%').attr('height', '140%');
@@ -187,7 +257,8 @@ export function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Dist
     // browsers report trackpad pinch). Plain wheel pans, handled below.
     // Drag and touch gestures keep d3-zoom's default filter.
     .filter(ev => ev.type === 'wheel' ? (ev.ctrlKey || ev.metaKey) : (!ev.ctrlKey || ev.type === 'wheel') && !ev.button)
-    .on('zoom', (ev) => contentG.attr('transform', ev.transform));
+    .on('zoom', (ev) => contentG.attr('transform', ev.transform))
+    .on('end', scheduleLodCheck);
   svg.call(_zoomBehavior);
   // Scroll to pan (both axes; trackpads give deltaX for horizontal).
   svg.on('wheel.zoompan', (ev: WheelEvent) => {
@@ -207,6 +278,7 @@ export function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Dist
     svg.call(_zoomBehavior.transform, _savedTransform);
   }
 
+  _fullNodes = detailSet(net, fit ?? (_savedTransform !== d3.zoomIdentity ? _savedTransform : d3.zoomIdentity), W, H);
   _edgeGroup = contentG.append('g');
   drawEdges(net);
 
@@ -224,6 +296,7 @@ export function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Dist
     // Detect degenerate posteriors (all zeros or NaN = inconsistent evidence)
     const isDegenerate = dist ? [...dist.values()].every(p => p === 0 || isNaN(p)) : false;
 
+    const full = _fullNodes === null || _fullNodes.has(v.name);
     const ng = contentG.append('g').attr('transform', `translate(${pos.x},${pos.y})`);
 
     // Background
@@ -281,7 +354,7 @@ export function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Dist
     const bgRect = ng.append('rect').attr('x', -w / 2).attr('y', -h / 2)
       .attr('width', w).attr('height', h).attr('rx', 8)
       .attr('fill', bgFill).attr('stroke', borderCol).attr('stroke-width', isDo ? 2.5 : 1.5)
-      .attr('filter', 'url(#node-shadow)');
+      .attr('filter', full ? 'url(#node-shadow)' : null);
     if (isDegenerate) {
       bgRect.attr('stroke-dasharray', '4,3').attr('opacity', 0.7);
     }
@@ -369,14 +442,16 @@ export function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Dist
     }
 
     // Eye icon (Material Design Visibility / VisibilityOff)
-    const eyeG = ng.append('g').attr('class', 'cz').attr('cursor', 'pointer')
-      .attr('transform', `translate(${-w / 2 + 18},${ry})`)
-      .on('click', (ev) => { ev.stopPropagation(); toggleEye(v); });
-    eyeG.append('rect').attr('x', -10).attr('y', -10).attr('width', 20).attr('height', 20).attr('fill', 'transparent');
-    const eyeColor = isObs ? (isHard ? 'var(--accent-hard)' : isSoft ? 'var(--accent-soft)' : 'var(--accent)') : 'var(--text-dim)';
-    eyeG.append('path').attr('d', isObs ? ICON_VIS : ICON_VIS_OFF)
-      .attr('fill', eyeColor).attr('transform', 'translate(-8,-8) scale(0.67)');
-    eyeG.append('title').text(eyeTooltip(v));
+    if (full) {
+      const eyeG = ng.append('g').attr('class', 'cz').attr('cursor', 'pointer')
+        .attr('transform', `translate(${-w / 2 + 18},${ry})`)
+        .on('click', (ev) => { ev.stopPropagation(); toggleEye(v); });
+      eyeG.append('rect').attr('x', -10).attr('y', -10).attr('width', 20).attr('height', 20).attr('fill', 'transparent');
+      const eyeColor = isObs ? (isHard ? 'var(--accent-hard)' : isSoft ? 'var(--accent-soft)' : 'var(--accent)') : 'var(--text-dim)';
+      eyeG.append('path').attr('d', isObs ? ICON_VIS : ICON_VIS_OFF)
+        .attr('fill', eyeColor).attr('transform', 'translate(-8,-8) scale(0.67)');
+      eyeG.append('title').text(eyeTooltip(v));
+    }
 
     // Name + percentage
     const nameG = ng.append('g').attr('class', 'cz').attr('cursor', 'pointer')
@@ -387,14 +462,11 @@ export function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Dist
     nameG.append('text').attr('y', 4).attr('font-size', '12px').attr('font-weight', '600').attr('fill', nameColor)
       .text(v.name + labelSuffix);
     // Only the title text is clickable (cycle); the rest of the row is plain node background.
-    // Measured once at render time, never on hover/pointermove.
-    try {
-      const tw = (nameG.select('text').node() as SVGTextElement).getComputedTextLength();
-      if (tw > 0) hitRect.attr('width', Math.min(w - 48, tw + 6));
-    } catch { /* not measurable: keep full-row fallback */ }
+    // Measured with canvas (no layout), never on hover/pointermove.
+    hitRect.attr('width', Math.min(w - 48, textWidth(v.name + labelSuffix, 12, 600) + 6));
 
     // ── Row 2: slider or bars ──
-    if (dist) {
+    if (dist && full) {
       if (isSliderVar(v)) boolSlider(ng, v, dist, w, h, nodeAccent, geom);
       else multiNode(ng, v, dist, w, h, nodeAccent, geom);
     }
@@ -673,15 +745,32 @@ function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Va
 
   // Layout columns
   const pctColW = 38;
-  const labelColW = Math.max(...v.outcomes.map(o => o.length)) * 6.5 + 14;
+  const labelColW = _labelColW.get(v.name) ?? 60;
   const barPad = 6;
   const thumbR = 5;
   const bw = w - 16 - labelColW - barPad - pctColW - thumbR;
   const bx = -w / 2 + 8 + labelColW + barPad;
 
+  // Which outcomes get a row: all of them, or (capped nodes) the MAX_ROWS most relevant right now:
+  // tweaked / observed outcomes first, then by displayed value; drawn in their natural order.
+  const capped = isCapped(v) && !_expanded.has(v.name);
+  const shown = new Set<number>();
+  if (capped) {
+    const order = v.outcomes.map((o, i) => i);
+    const hard = S.hardEvidence.get(v.name);
+    const pri = (i: number) => (tweaked.has(v.outcomes[i]) || (isObs && v.outcomes[i] === hard) ? 2 : 0) + (displayW.get(v.outcomes[i]) ?? 0);
+    order.sort((a, b) => pri(b) - pri(a));
+    for (const i of order.slice(0, MAX_ROWS)) shown.add(i);
+  }
+
   let y = -h / 2 + 30;
 
   for (let i = 0; i < v.outcomes.length; i++) {
+    if (capped && !shown.has(i)) {
+      // Not drawn: a zero-size, off-screen placeholder keeps `bars[i]` aligned with outcome i for the overlays.
+      geom.bars.push({ outcome: v.outcomes[i], idx: i, val: displayW.get(v.outcomes[i]) ?? 0, x0: bx, range: 0, bx, bw: 0, by: -1e6, barH: 0, labelX: null, hidden: true });
+      continue;
+    }
     const o = v.outcomes[i];
     const val = displayW.get(o) ?? 0; // bar = thumb = % = this value
     const pct = Math.round(val * 100);
@@ -743,20 +832,49 @@ function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Va
 
     y += NODE_H_PER_OUTCOME;
   }
+
+  if (isCapped(v)) {
+    const k = v.outcomes.length - MAX_ROWS;
+    const mg = g.append('g').attr('class', 'cz more-row').attr('cursor', 'pointer')
+      .on('click', (ev) => { ev.stopPropagation(); toggleExpanded(v.name); });
+    mg.append('rect').attr('x', -w / 2 + 6).attr('y', y - 6).attr('width', w - 12).attr('height', 16).attr('rx', 4).attr('fill', 'transparent');
+    mg.append('text').attr('x', 0).attr('y', y + 3).attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+      .attr('font-size', '10px').attr('fill', 'var(--accent)')
+      .text(capped ? `+${k} more \u25BE` : 'show fewer \u25B4');
+    if (capped) {
+      const hidden = v.outcomes.map((o, i) => [o, i] as const).filter(([, i]) => !shown.has(i))
+        .map(([o]) => `${o} ${Math.round((displayW.get(o) ?? 0) * 100)}%`);
+      mg.append('title').text(hidden.slice(0, 40).join(', ') + (hidden.length > 40 ? ', …' : ''));
+    }
+  }
+}
+
+function toggleExpanded(name: string): void {
+  if (_expanded.has(name)) _expanded.delete(name); else _expanded.add(name);
+  render();
 }
 
 // ─── Render orchestrator ─────────────────────────────────────────────
 
+/** Networks at least this big get their first (cold) inference computed in a worker. */
+const COLD_ASYNC_MIN_VARS = 150;
+/** Networks whose engine already ran on the main thread (compiled, caches warm). */
+const _warm = new WeakSet<BayesianNetwork>();
+let _renderSeq = 0;
+
 export function render(): void {
   const active = getActive();
-  if (!S.network || !active) return;
+  if (!S.network || !active || (_layoutPending && S.nodePositions.size === 0)) return;
+  const seq = ++_renderSeq;
   let he: ReturnType<typeof effectiveEvidence>[0], se: ReturnType<typeof effectiveEvidence>[1];
   let result: { posteriors: Map<Variable, Distribution>; probabilityOfEvidence: number };
   const nameEl = document.getElementById('network-name');
   const t0 = performance.now();
   try {
     [he, se] = effectiveEvidence();
+    if (coldAsyncEligible(active, he, se)) { renderColdAsync(active, seq); return; }
     result = active.engine.infer(he, se);
+    _warm.add(active.net);
     S.lastInferMs = performance.now() - t0;
     S.inferenceError = null;
     if (nameEl && nameEl.dataset.conflict) { nameEl.textContent = S.network.name; delete nameEl.dataset.conflict; }
@@ -781,13 +899,24 @@ export function render(): void {
       if (nameEl) { nameEl.textContent = S.inferenceError; nameEl.dataset.conflict = '1'; }
     }
   }
+  finishRender(active, result, he, se);
+}
+
+/** Everything after inference: derived analyses, drawing, panels, persistence. */
+function finishRender(
+  active: NonNullable<ReturnType<typeof getActive>>,
+  result: { posteriors: Map<Variable, Distribution>; probabilityOfEvidence: number },
+  he: ReturnType<typeof effectiveEvidence>[0], se: ReturnType<typeof effectiveEvidence>[1],
+): void {
+  const network = S.network;
+  if (!network) return;
   S.lastPosteriors = new Map();
   for (const [v, d] of result.posteriors) S.lastPosteriors.set(v.name, d);
   updateEvidenceBadge();
 
   // Sensitivity heat-map: only when mode is active and a query is selected
-  if (!S.inferenceError && S.sensitivityMode && S.sensitivityQuery && S.network.getVariable(S.sensitivityQuery)) {
-    const qVar = S.network.getVariable(S.sensitivityQuery)!;
+  if (!S.inferenceError && S.sensitivityMode && S.sensitivityQuery && network.getVariable(S.sensitivityQuery)) {
+    const qVar = network.getVariable(S.sensitivityQuery)!;
     const qOutcome = qVar.outcomes[0];
     try {
       S.sensitivityResults = analyticSensitivity(active.net, S.sensitivityQuery, qOutcome, he && he.size > 0 ? he : undefined);
@@ -823,7 +952,7 @@ export function render(): void {
     S.voiResults = null;
   }
 
-  renderGraph(S.network, result.posteriors);
+  renderGraph(network, result.posteriors);
   resetPreviewAfterRender();
   reapplyExplain();
   refreshExplain();
@@ -841,6 +970,62 @@ export function render(): void {
   }
 }
 
+
+function coldAsyncEligible(active: NonNullable<ReturnType<typeof getActive>>, he: ReturnType<typeof effectiveEvidence>[0], se: ReturnType<typeof effectiveEvidence>[1]): boolean {
+  return !IS_MCP && typeof Worker !== 'undefined' && active.key === '' && !_warm.has(active.net)
+    && active.net.variables.length >= COLD_ASYNC_MIN_VARS
+    && (he?.size ?? 0) === 0 && (se?.size ?? 0) === 0
+    && !S.sensitivityMode && S.selectedNodes.size === 0;
+}
+
+/**
+ * First inference of a big network, off the main thread: draw the structure
+ * right away, then fill in the posteriors when the worker answers (dropped if
+ * anything re-rendered meanwhile). Any worker failure falls back to the
+ * synchronous path, which also produces the "structure only" explanation.
+ */
+interface ColdJob { net: BayesianNetwork; t0: number; result: Promise<ReadonlyMap<string, Distribution>> }
+let _coldJob: ColdJob | null = null;
+
+/** Start (or reuse) the worker inference of `net`'s priors. */
+function coldJob(net: BayesianNetwork): ColdJob {
+  if (_coldJob?.net === net) return _coldJob;
+  const result = (async () => {
+    const { WorkerInferenceEngine } = await import('../lib/worker-inference.js');
+    const w = new WorkerInferenceEngine(toXmlBif(net));
+    try { return (await w.infer()).posteriors as ReadonlyMap<string, Distribution>; } finally { w.terminate(); }
+  })();
+  result.catch(() => { /* handled by the consumer */ });
+  return (_coldJob = { net, t0: performance.now(), result });
+}
+
+/**
+ * First inference of a big network, off the main thread: draw the structure
+ * right away, then fill in the posteriors when the worker answers (dropped if
+ * anything re-rendered meanwhile). Any worker failure falls back to the
+ * synchronous path, which also produces the "structure only" explanation.
+ */
+function renderColdAsync(active: NonNullable<ReturnType<typeof getActive>>, seq: number): void {
+  S.lastPosteriors = new Map();
+  S.inferenceError = null;
+  S.lastProbabilityOfEvidence = undefined;
+  S.voiResults = null; S.sensitivityInfluence = null; S.sensitivityResults = null;
+  finishRender(active, { posteriors: new Map(), probabilityOfEvidence: 1 }, undefined, undefined);
+  const net = active.net;
+  const job = coldJob(net);
+  job.result.then(byName => {
+    if (seq !== _renderSeq || S.network !== net) return; // something else rendered meanwhile
+    const posteriors = new Map<Variable, Distribution>();
+    for (const v of net.variables) { const d = byName.get(v.name); if (d) posteriors.set(v, d); }
+    S.lastInferMs = performance.now() - job.t0;
+    finishRender(active, { posteriors, probabilityOfEvidence: 1 }, undefined, undefined);
+  }).catch(() => {
+    if (seq !== _renderSeq) return;
+    _warm.add(net); // do not retry the worker path: take the synchronous one (it reports infeasible inference)
+    render();
+  });
+}
+
 let _voiMemo: { net: BayesianNetwork; key: string; results: typeof S.voiResults } | null = null;
 
 /** Header badge: P(evidence), only shown when something is observed. */
@@ -856,24 +1041,59 @@ function updateEvidenceBadge(): void {
 
 // ─── Layout ──────────────────────────────────────────────────────────
 
-export function autoLayout(): void {
-  if (!S.network) return;
-  const g = new dagre.graphlib.Graph();
-  // network-simplex ranking is superlinear (14 s on link, 724 nodes); tight-tree gives the same layout ~25x faster.
-  g.setGraph({ rankdir: 'TB', nodesep: 50, ranksep: 70, marginx: 30, marginy: 30, ranker: S.network.variables.length > 150 ? 'tight-tree' : 'network-simplex' });
-  g.setDefaultEdgeLabel(() => ({}));
-  for (const v of S.network.variables) g.setNode(v.name, { width: nodeW(v), height: nodeH(v) });
-  for (const cpt of S.network.cpts)
-    for (const p of cpt.parents) g.setEdge(p.name, cpt.variable.name);
-  dagre.layout(g);
+let _layoutSeq = 0;
+let _layoutPending = false;
+
+/**
+ * Lay the network out (dagre, in a worker) then render. Async: while the layout
+ * is computing, render() is a no-op and a placeholder is shown on a fresh load.
+ */
+export async function autoLayout(): Promise<void> {
+  const net = S.network;
+  if (!net) return;
+  const seq = ++_layoutSeq;
+  ensureWidths(net);
   const c = document.getElementById('graph-container')!;
-  const gw = g.graph().width ?? c.clientWidth;
-  const gh = g.graph().height ?? c.clientHeight;
+  const fresh = S.nodePositions.size === 0;
+  _layoutPending = true;
+  // Overlap the first inference with the layout (two workers, two cores).
+  if (fresh) {
+    const active = getActive();
+    if (active) {
+      const [he, se] = effectiveEvidence();
+      if (coldAsyncEligible(active, he, se)) coldJob(active.net);
+    }
+  }
+  if (fresh) {
+    c.innerHTML = '';
+    const note = document.createElement('div');
+    note.id = 'layout-status';
+    note.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:14px;pointer-events:none';
+    note.textContent = `Laying out ${net.variables.length} nodes…`;
+    c.appendChild(note);
+  }
+  const index = new Map(net.variables.map((v, i) => [v.name, i]));
+  const edges: Array<[number, number]> = [];
+  for (const cpt of net.cpts)
+    for (const p of cpt.parents) edges.push([index.get(p.name)!, index.get(cpt.variable.name)!]);
+  let res;
+  try {
+    res = await runLayout({
+      names: net.variables.map(v => v.name),
+      w: net.variables.map(nodeW), h: net.variables.map(nodeH), edges,
+    });
+  } catch (e) {
+    console.error('layout failed', e);
+    if (seq === _layoutSeq) _layoutPending = false;
+    return;
+  }
+  if (seq === _layoutSeq) _layoutPending = false;
+  if (seq !== _layoutSeq || S.network !== net) return; // superseded by a newer layout / network
+  document.getElementById('layout-status')?.remove();
+  const gw = res.width || c.clientWidth;
+  const gh = res.height || c.clientHeight;
   const ox = Math.max(0, (c.clientWidth - gw) / 2);
   const oy = Math.max(0, (c.clientHeight - gh) / 2);
-  for (const v of S.network.variables) {
-    const n = g.node(v.name);
-    S.nodePositions.set(v.name, { x: n.x + ox, y: n.y + oy });
-  }
+  net.variables.forEach((v, i) => S.nodePositions.set(v.name, { x: res.x[i] + ox, y: res.y[i] + oy }));
   render();
 }
