@@ -5,24 +5,14 @@
  * Performs exact inference on Bayesian networks using the junction tree
  * algorithm with two-phase message passing (collect + distribute evidence).
  */
-import { validateEvidence, ImpossibleEvidenceError } from './evidence.js';
+import { validateEvidence } from './evidence.js';
+import type { Factor } from './factor.js';
 import type { Variable, CPT, Evidence, LikelihoodEvidence, Distribution } from './types.js';
-import {
-  type Factor,
-  cptToFactor,
-  multiplyFactors,
-  marginalize,
-  invertFactor,
-  normalizeFactor,
-  constantFactor,
-  applyEvidence,
-  applyLikelihood,
-  extractDistribution,
-} from './factor.js';
+import { CalibratedTree, buildLikelihoods } from './calibrated-tree.js';
+import { relevantNetwork, resolveQueryVariables } from './pruning.js';
 import {
   type DirectedGraph,
   type JunctionTree,
-  type Clique,
   type CostEstimate,
   type EliminationHeuristic,
   buildJunctionTree,
@@ -49,6 +39,23 @@ export interface InferOptions {
   readonly maxCliqueEntries?: number;
   /** Triangulation heuristic (default 'min-fill'). */
   readonly eliminationHeuristic?: EliminationHeuristic;
+  /**
+   * Compute posteriors only for these variables (or variable names). The
+   * network is first pruned to the part that can influence them given the
+   * evidence: barren nodes (unobserved nodes with no queried or observed
+   * descendants) and nodes d-separated from the query by the evidence are
+   * dropped before the junction tree is built, which can shrink it a lot.
+   *
+   * Posteriors of the query variables are identical to those of a full run.
+   * Differences from a full run, all consequences of dropping nodes:
+   * - `posteriors` holds only the query variables;
+   * - `junctionTree` and `cliquePotentials` describe the pruned network;
+   * - evidence that is d-separated from the query is ignored, so
+   *   `probabilityOfEvidence` is the probability of the *relevant* evidence only,
+   *   and contradictions confined to irrelevant evidence are not reported as
+   *   `ImpossibleEvidenceError`. Omit the option when either matters.
+   */
+  readonly queryVariables?: readonly (Variable | string)[];
 }
 
 /** Resolve the clique-size budget: explicit option > env var > default. */
@@ -65,7 +72,7 @@ function resolveMaxCliqueEntries(opt?: number): number {
 }
 
 /** Build the directed graph (DAG) implied by a set of CPTs. */
-function buildDag(variables: readonly Variable[], cpts: readonly CPT[]): DirectedGraph {
+export function buildDag(variables: readonly Variable[], cpts: readonly CPT[]): DirectedGraph {
   const edges: Array<[Variable, Variable]> = [];
   for (const cpt of cpts) {
     for (const parent of cpt.parents) {
@@ -89,88 +96,6 @@ export function estimateInferenceCost(
   return estimateJunctionTreeCost(dag, { heuristic: options?.eliminationHeuristic });
 }
 
-// ─── Separator potentials (keyed by ordered clique pair) ─────────────
-
-function sepKey(i: number, j: number): string {
-  return i < j ? `${i},${j}` : `${j},${i}`;
-}
-
-// ─── Message passing ─────────────────────────────────────────────────
-
-function passMessage(
-  iSource: number,
-  iDest: number,
-  cliques: readonly Clique[],
-  cliquePotentials: Map<number, Factor>,
-  separatorPotentials: Map<string, Factor>,
-): void {
-  const key = sepKey(iSource, iDest);
-  const oldSepPotential = separatorPotentials.get(key);
-
-  const destNodes = new Set(cliques[iDest]);
-
-  // Variables in source but not in destination → marginalize out
-  const varsToMarginalize = cliques[iSource].filter(v => !destNodes.has(v));
-
-  const sourcePotential = cliquePotentials.get(iSource)!;
-  const newSepPotential = marginalize(sourcePotential, varsToMarginalize);
-
-  separatorPotentials.set(key, newSepPotential);
-
-  const oldDestPotential = cliquePotentials.get(iDest)!;
-
-  // Compute ratio: newSep / oldSep (or just newSep if no old)
-  const ratio = oldSepPotential
-    ? multiplyFactors(newSepPotential, invertFactor(oldSepPotential))
-    : newSepPotential;
-
-  const newDestPotential = multiplyFactors(oldDestPotential, ratio);
-  cliquePotentials.set(iDest, newDestPotential);
-}
-
-function collectEvidence(
-  iSource: number,
-  iCaller: number,
-  marked: boolean[],
-  cliques: readonly Clique[],
-  neighbors: Map<number, Set<number>>,
-  cliquePotentials: Map<number, Factor>,
-  separatorPotentials: Map<string, Factor>,
-): void {
-  marked[iSource] = true;
-  for (const iNeighbor of neighbors.get(iSource)!) {
-    if (!marked[iNeighbor]) {
-      collectEvidence(iNeighbor, iSource, marked, cliques, neighbors, cliquePotentials, separatorPotentials);
-    }
-  }
-  if (iCaller >= 0) {
-    passMessage(iSource, iCaller, cliques, cliquePotentials, separatorPotentials);
-  }
-}
-
-function distributeEvidence(
-  iSource: number,
-  marked: boolean[],
-  cliques: readonly Clique[],
-  neighbors: Map<number, Set<number>>,
-  cliquePotentials: Map<number, Factor>,
-  separatorPotentials: Map<string, Factor>,
-): void {
-  marked[iSource] = true;
-  // First pass all messages
-  for (const iNeighbor of neighbors.get(iSource)!) {
-    if (!marked[iNeighbor]) {
-      passMessage(iSource, iNeighbor, cliques, cliquePotentials, separatorPotentials);
-    }
-  }
-  // Then recurse
-  for (const iNeighbor of neighbors.get(iSource)!) {
-    if (!marked[iNeighbor]) {
-      distributeEvidence(iNeighbor, marked, cliques, neighbors, cliquePotentials, separatorPotentials);
-    }
-  }
-}
-
 // ─── Public API ──────────────────────────────────────────────────────
 
 export interface InferenceResult {
@@ -189,41 +114,6 @@ export interface InferenceResult {
    * `ImpossibleEvidenceError`.
    */
   probabilityOfEvidence: number;
-}
-
-/**
- * Run collect + distribute message passing on every connected component of the
- * junction tree (the tree is a forest when the network is disconnected), then
- * return P(evidence). After calibration every clique potential of a component
- * sums to that component's evidence probability (Hugin architecture); P(e) is
- * the product over components. Throws `ImpossibleEvidenceError` when it is zero
- * or not a number, instead of letting NaN posteriors escape.
- */
-export function propagate(
-  junctionTree: JunctionTree,
-  cliquePotentials: Map<number, Factor>,
-): number {
-  const { cliques, neighbors } = junctionTree;
-  const separatorPotentials = new Map<string, Factor>();
-  const visited = new Array<boolean>(cliques.length).fill(false);
-  let probabilityOfEvidence = 1;
-
-  // Roots are picked from the last clique downwards (as the single-tree code did).
-  for (let root = cliques.length - 1; root >= 0; root--) {
-    if (visited[root]) continue;
-    const marked1 = new Array<boolean>(cliques.length).fill(false);
-    collectEvidence(root, -1, marked1, cliques, neighbors, cliquePotentials, separatorPotentials);
-    const marked2 = new Array<boolean>(cliques.length).fill(false);
-    distributeEvidence(root, marked2, cliques, neighbors, cliquePotentials, separatorPotentials);
-    for (let i = 0; i < cliques.length; i++) if (marked1[i]) visited[i] = true;
-
-    const potential = cliquePotentials.get(root)!;
-    let sum = 0;
-    for (let i = 0; i < potential.values.length; i++) sum += potential.values[i];
-    if (!(sum > 0)) throw new ImpossibleEvidenceError();
-    probabilityOfEvidence *= sum;
-  }
-  return probabilityOfEvidence;
 }
 
 /**
@@ -248,10 +138,12 @@ export function infer(
 ): InferenceResult {
   validateEvidence(variables, evidence, likelihoodEvidence);
 
-  // Build DAG from CPTs
-  const cptByVar = new Map<Variable, CPT>();
-  for (const cpt of cpts) {
-    cptByVar.set(cpt.variable, cpt);
+  // Optionally prune to the part of the network the query depends on.
+  const query = resolveQueryVariables(variables, options?.queryVariables);
+  if (query) {
+    const pruned = relevantNetwork(variables, cpts, query, ...evidenceSets(variables, evidence, likelihoodEvidence));
+    variables = pruned.variables;
+    cpts = pruned.cpts;
   }
 
   const dag = buildDag(variables, cpts);
@@ -285,85 +177,41 @@ export function infer(
     return { posteriors: new Map(), junctionTree, cliquePotentials: new Map(), probabilityOfEvidence: 1 };
   }
 
-  // Build fusioned definitions: CPT * likelihood (evidence)
-  const fusionedFactors = new Map<Variable, Factor>();
+  // One-shot: no need to keep the CPT products around for re-initialisation.
+  const tree = new CalibratedTree(variables, cpts, junctionTree);
+  const probabilityOfEvidence = tree.calibrate(buildLikelihoods(variables, evidence, likelihoodEvidence));
+  return readResult(tree, variables, query, probabilityOfEvidence);
+}
+
+/** The variables with hard evidence, and those with only likelihood evidence. */
+export function evidenceSets(
+  variables: readonly Variable[],
+  evidence?: Evidence,
+  likelihoodEvidence?: LikelihoodEvidence,
+): [Set<Variable>, Set<Variable>] {
+  const hard = new Set<Variable>();
+  const soft = new Set<Variable>();
   for (const v of variables) {
-    const cpt = cptByVar.get(v);
-    if (!cpt) continue;
-    let factor = cptToFactor(cpt.variable, cpt.parents, cpt.table);
-
-    // Apply hard evidence if present
-    if (evidence?.has(v.name)) {
-      const observedOutcome = evidence.get(v.name)!;
-      const outcomeIdx = v.outcomes.indexOf(observedOutcome);
-      if (outcomeIdx >= 0) {
-        factor = applyEvidence(factor, v, outcomeIdx);
-      }
-    }
-
-    // Apply soft/likelihood evidence if present
-    if (likelihoodEvidence?.has(v.name)) {
-      const weights = likelihoodEvidence.get(v.name)!;
-      const weightArray = new Float64Array(v.outcomes.length);
-      for (let i = 0; i < v.outcomes.length; i++) {
-        weightArray[i] = weights.get(v.outcomes[i]) ?? 1;
-      }
-      factor = applyLikelihood(factor, v, weightArray);
-    }
-
-    fusionedFactors.set(v, factor);
+    if (evidence?.has(v.name)) hard.add(v);
+    else if (likelihoodEvidence?.has(v.name)) soft.add(v);
   }
+  return [hard, soft];
+}
 
-  // ── Initialize clique potentials ──
-  const cliquePotentials = new Map<number, Factor>();
-  const assigned = new Set<Variable>();
-
-  for (let iClique = 0; iClique < junctionTree.cliques.length; iClique++) {
-    const clique = junctionTree.cliques[iClique];
-    const cliqueSet = new Set(clique);
-    let product: Factor | null = null;
-
-    for (const v of clique) {
-      if (assigned.has(v)) continue;
-      const f = fusionedFactors.get(v);
-      if (!f) continue;
-
-      // Check that all of this factor's variables are in this clique
-      if (f.variables.every(fv => cliqueSet.has(fv))) {
-        assigned.add(v);
-        product = product ? multiplyFactors(product, f) : f;
-      }
-    }
-
-    cliquePotentials.set(iClique, product ?? constantFactor(1));
-  }
-
-  // Check all variables assigned
-  for (const v of variables) {
-    if (!assigned.has(v) && cptByVar.has(v)) {
-      throw new Error(`Failed to assign variable ${v.name} to a clique`);
-    }
-  }
-
-  // ── Global propagation ──
-  const probabilityOfEvidence = propagate(junctionTree, cliquePotentials);
-
-  // Normalize each clique potential
-  for (const [i, potential] of cliquePotentials) {
-    cliquePotentials.set(i, normalizeFactor(potential, 1));
-  }
-
-  // ── Extract posterior distributions ──
+/** Collect the posteriors of a calibrated tree into an `InferenceResult`. */
+export function readResult(
+  tree: CalibratedTree,
+  variables: readonly Variable[],
+  query: ReadonlySet<Variable> | undefined,
+  probabilityOfEvidence: number,
+): InferenceResult {
   const posteriors = new Map<Variable, Distribution>();
   for (const v of variables) {
-    // Find a clique containing this variable and extract its marginal
-    for (const [, potential] of cliquePotentials) {
-      if (potential.variables.includes(v)) {
-        posteriors.set(v, extractDistribution(potential, v));
-        break;
-      }
-    }
+    if (query && !query.has(v)) continue;
+    const dist = tree.marginal(v);
+    if (dist) posteriors.set(v, dist);
   }
-
-  return { posteriors, junctionTree, cliquePotentials, probabilityOfEvidence };
+  const result = { posteriors, junctionTree: tree.junctionTree, probabilityOfEvidence } as InferenceResult;
+  tree.defineCliquePotentials(result);
+  return result;
 }

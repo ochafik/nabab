@@ -443,3 +443,125 @@ export function extractDistribution(factor: Factor, variable: Variable): Map<str
   }
   return dist;
 }
+
+// ─── In-place kernels ────────────────────────────────────────────────
+//
+// Message passing on a fixed junction tree touches the same (clique, separator)
+// pairs over and over, so the loop structure is computed once as a `LoopPlan`
+// and replayed without allocating. A plan describes how a source table is
+// walked in row-major order and which index of a smaller table (separator,
+// CPT, likelihood vector) each source entry maps to.
+
+/**
+ * A precomputed walk over a table: dimension cardinalities (outermost first)
+ * and, per dimension, the stride in the smaller table (0 if the dimension is
+ * absent from it). Adjacent dimensions that are contiguous in both tables are
+ * merged so the innermost loop is as long as possible.
+ */
+export interface LoopPlan {
+  readonly cards: Int32Array;
+  readonly strides: Int32Array;
+}
+
+/**
+ * Plan for walking a table over `variables` (row-major) while indexing a
+ * smaller factor whose variables are a subset of `variables`.
+ */
+export function createLoopPlan(variables: readonly Variable[], small: Factor): LoopPlan {
+  const cards: number[] = [];
+  const strides: number[] = [];
+  for (const v of variables) {
+    const idx = small.variables.indexOf(v);
+    cards.push(v.outcomes.length);
+    strides.push(idx >= 0 ? small.strides[idx] : 0);
+  }
+  // Merge dimension d into d+1 when stepping d once equals stepping d+1 `card` times.
+  for (let d = cards.length - 2; d >= 0; d--) {
+    if (strides[d] === strides[d + 1] * cards[d + 1]) {
+      cards[d + 1] *= cards[d];
+      cards.splice(d, 1);
+      strides.splice(d, 1);
+    }
+  }
+  return { cards: Int32Array.from(cards), strides: Int32Array.from(strides) };
+}
+
+/**
+ * Sum of `values[start..end)`. Four independent accumulators hide the
+ * floating-point add latency, which otherwise bounds a plain running sum.
+ */
+export function sumRange(values: Float64Array, start: number, end: number): number {
+  let s0 = 0, s1 = 0, s2 = 0, s3 = 0;
+  let i = start;
+  for (; i + 3 < end; i += 4) {
+    s0 += values[i];
+    s1 += values[i + 1];
+    s2 += values[i + 2];
+    s3 += values[i + 3];
+  }
+  for (; i < end; i++) s0 += values[i];
+  return (s0 + s1) + (s2 + s3);
+}
+
+/** `out[map(i)] += src[i]` for every entry i of `src` (sums `src` down onto a smaller table). */
+export function sumInto(src: Float64Array, plan: LoopPlan, out: Float64Array): void {
+  const { cards, strides } = plan;
+  const n = cards.length;
+  if (n === 0) {
+    out[0] += src[0];
+    return;
+  }
+  const inner = cards[n - 1];
+  const innerStride = strides[n - 1];
+  const outer = src.length / inner;
+  const counter = new Int32Array(n);
+  let pos = 0;
+  let base = 0;
+  for (let o = 0; o < outer; o++) {
+    if (innerStride === 0) {
+      out[base] += sumRange(src, pos, pos + inner);
+    } else {
+      let t = base;
+      for (let j = 0; j < inner; j++, t += innerStride) out[t] += src[pos + j];
+    }
+    pos += inner;
+    for (let d = n - 2; d >= 0; d--) {
+      base += strides[d];
+      if (++counter[d] < cards[d]) break;
+      base -= cards[d] * strides[d];
+      counter[d] = 0;
+    }
+  }
+}
+
+/** `dst[i] *= small[map(i)]` for every entry i of `dst` (multiplies a smaller table into `dst`). */
+export function multiplyInto(dst: Float64Array, plan: LoopPlan, small: Float64Array): void {
+  const { cards, strides } = plan;
+  const n = cards.length;
+  if (n === 0) {
+    for (let i = 0; i < dst.length; i++) dst[i] *= small[0];
+    return;
+  }
+  const inner = cards[n - 1];
+  const innerStride = strides[n - 1];
+  const outer = dst.length / inner;
+  const counter = new Int32Array(n);
+  let pos = 0;
+  let base = 0;
+  for (let o = 0; o < outer; o++) {
+    if (innerStride === 0) {
+      const w = small[base];
+      for (let j = 0; j < inner; j++) dst[pos + j] *= w;
+    } else {
+      let t = base;
+      for (let j = 0; j < inner; j++, t += innerStride) dst[pos + j] *= small[t];
+    }
+    pos += inner;
+    for (let d = n - 2; d >= 0; d--) {
+      base += strides[d];
+      if (++counter[d] < cards[d]) break;
+      base -= cards[d] * strides[d];
+      counter[d] = 0;
+    }
+  }
+}
