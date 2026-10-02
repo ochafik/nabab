@@ -25,7 +25,7 @@ Nabab is a pure TypeScript library for exact and approximate inference on discre
 - **DOM-free library** -- the inference engine uses regex-based XML parsing and has zero DOM dependencies; works in Node.js, Deno, Bun, Cloudflare Workers, or any browser
 - **MCP server** for Claude and other LLM tool-use integration, with an interactive MCP App viewer
 - **17 standard benchmark models** (Asia, Alarm, Sachs, Child, Insurance, Water, Hepar2, Hailfinder, Win95pts, Pathfinder, Barley, Mildew, Diabetes, Link, Pigs, Andes, Munin1)
-- **622 tests** across 34 test files covering factors, graphs, triangulation, inference, evidence validation, parsers, cross-validation, LBP, VE, cached inference, worker inference, the MCP server, and TensorFlow.js factor ops
+- **679 tests** across 36 test files covering factors, graphs, triangulation, inference, evidence validation, parsers, cross-validation, LBP, VE, cached inference, worker inference, the MCP server, and TensorFlow.js factor ops
 
 ### Stability
 
@@ -434,7 +434,7 @@ src/mcp/                -- MCP server for LLM integration
   worker.ts             -- Cloudflare Workers entry: session routing, help page, assets binding
   session-host.ts       -- One session inside a Durable Object: persistence and resume
 
-test/                   -- Vitest test suite (622 tests)
+test/                   -- Vitest test suite (679 tests)
 bench/                  -- Benchmark runner and 17 bnlearn models
   models/               -- .bif files (asia, alarm, sachs, child, etc.)
   run-bench.ts          -- Benchmark runner
