@@ -8,3 +8,7 @@ node_modules
 dist
 build
 .vercel
+
+# Claude Code local state and agent worktrees
+.claude/worktrees/
+.claude/settings.local.json
