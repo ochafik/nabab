@@ -501,8 +501,9 @@ describe('Fail-fast clique-size guard', () => {
     }).toThrow(/exact inference aborted/i);
     const elapsed = performance.now() - t0;
 
-    // Must fail fast (well under a second) — proves it did not allocate/hang.
-    expect(elapsed).toBeLessThan(1000);
+    // Must fail fast — proves it did not allocate/hang. ~50 ms locally; the
+    // bound is loose because shared CI runners can be 20x+ slower under load.
+    expect(elapsed).toBeLessThan(5000);
     // Message names the offending clique variables and the sizes.
     expect(message).toMatch(/treewidth/);
     expect(message).toMatch(/g\d+_\d+/); // a grid variable name
