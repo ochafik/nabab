@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "nabab",
+  "account_id": "9a1d3b00717ed7acc339f1948ff9a9be",
   "main": "src/mcp/worker.ts",
   "compatibility_date": "2026-01-15",
   "compatibility_flags": ["nodejs_compat"],
