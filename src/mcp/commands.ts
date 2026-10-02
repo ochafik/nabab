@@ -1,6 +1,6 @@
 /**
  * Command queue for server→viewer communication.
- * Redis-backed for Vercel (cross-Lambda), in-memory fallback for local/stdio.
+ * In-memory queue (local stdio server and the Cloudflare Durable Object).
  */
 
 export interface NetworkData {
@@ -14,8 +14,6 @@ export interface NetworkData {
 }
 
 export type NababCommand = { type: 'update'; data: NetworkData };
-
-import type { Redis } from '@upstash/redis';
 
 export interface CommandQueue {
   enqueue(viewUUID: string, cmd: NababCommand): Promise<void>;
@@ -64,53 +62,6 @@ export function createMemoryQueue(): CommandQueue {
   };
 }
 
-// ─── Redis queue (Vercel / serverless) ──────────────────────────────
-
-export function createRedisQueue(): CommandQueue | null {
-  const url = process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
-  if (!url || !token) return null;
-
-  // Dynamic import to avoid requiring @upstash/redis when not needed
-  let redis: Redis | null = null;
-  const getRedis = async () => {
-    if (!redis) {
-      const { Redis } = await import('@upstash/redis');
-      redis = new Redis({ url, token });
-    }
-    return redis;
-  };
-
-  const CMD_KEY = (viewUUID: string) => `nabab:cmd:${viewUUID}`;
-  const CMD_TTL = 300; // 5 min
-
-  return {
-    async enqueue(viewUUID, cmd) {
-      const r = await getRedis();
-      await r.rpush(CMD_KEY(viewUUID), JSON.stringify(cmd));
-      await r.expire(CMD_KEY(viewUUID), CMD_TTL);
-    },
-
-    async poll(viewUUID, timeoutMs = 30_000) {
-      const r = await getRedis();
-      const deadline = Date.now() + timeoutMs;
-
-      while (Date.now() < deadline) {
-        const items: string[] = await r.lrange(CMD_KEY(viewUUID), 0, -1);
-        if (items.length > 0) {
-          await r.del(CMD_KEY(viewUUID));
-          return items.map(i => (typeof i === 'string' ? JSON.parse(i) : i) as NababCommand);
-        }
-        // Poll interval: 500ms
-        await new Promise(resolve => setTimeout(resolve, Math.min(500, deadline - Date.now())));
-      }
-      return [];
-    },
-  };
-}
-
-// ─── Auto-detect: Redis if configured, else in-memory ───────────────
-
 export function createQueue(): CommandQueue {
-  return createRedisQueue() ?? createMemoryQueue();
+  return createMemoryQueue();
 }
