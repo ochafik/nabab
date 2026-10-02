@@ -1,0 +1,289 @@
+{
+  "platform": "darwin arm64",
+  "node": "v26.8.1",
+  "models": [
+    {
+      "model": "asia",
+      "nodes": 8,
+      "maxCliqueEntries": 8,
+      "treewidth": 2,
+      "uncachedMs": 0.047,
+      "cachedColdMs": 0.812,
+      "cachedMs": {
+        "add": 0.008,
+        "switch": 0.008,
+        "retract": 0.007,
+        "clear": 0.004,
+        "same": 0.005
+      },
+      "cachedAvgMs": 0.006,
+      "prunedUncachedMs": 0.021,
+      "prunedCachedMs": 0.006
+    },
+    {
+      "model": "child",
+      "nodes": 20,
+      "maxCliqueEntries": 216,
+      "treewidth": 3,
+      "uncachedMs": 0.096,
+      "cachedColdMs": 0.135,
+      "cachedMs": {
+        "add": 0.012,
+        "switch": 0.014,
+        "retract": 0.012,
+        "clear": 0.008,
+        "same": 0.007
+      },
+      "cachedAvgMs": 0.011,
+      "prunedUncachedMs": 0.024,
+      "prunedCachedMs": 0.009
+    },
+    {
+      "model": "alarm",
+      "nodes": 37,
+      "maxCliqueEntries": 144,
+      "treewidth": 4,
+      "uncachedMs": 0.168,
+      "cachedColdMs": 0.187,
+      "cachedMs": {
+        "add": 0.018,
+        "switch": 0.022,
+        "retract": 0.022,
+        "clear": 0.013,
+        "same": 0.012
+      },
+      "cachedAvgMs": 0.017,
+      "prunedUncachedMs": 0.044,
+      "prunedCachedMs": 0.014
+    },
+    {
+      "model": "insurance",
+      "nodes": 27,
+      "maxCliqueEntries": 28800,
+      "treewidth": 7,
+      "uncachedMs": 0.863,
+      "cachedColdMs": 0.997,
+      "cachedMs": {
+        "add": 0.243,
+        "switch": 0.348,
+        "retract": 0.339,
+        "clear": 0.129,
+        "same": 0.014
+      },
+      "cachedAvgMs": 0.211,
+      "prunedUncachedMs": 0.163,
+      "prunedCachedMs": 0.207
+    },
+    {
+      "model": "hepar2",
+      "nodes": 70,
+      "maxCliqueEntries": 384,
+      "treewidth": 6,
+      "uncachedMs": 0.642,
+      "cachedColdMs": 0.688,
+      "cachedMs": {
+        "add": 0.041,
+        "switch": 0.05,
+        "retract": 0.047,
+        "clear": 0.03,
+        "same": 0.023
+      },
+      "cachedAvgMs": 0.038,
+      "prunedUncachedMs": 0.07,
+      "prunedCachedMs": 0.028
+    },
+    {
+      "model": "win95pts",
+      "nodes": 76,
+      "maxCliqueEntries": 512,
+      "treewidth": 8,
+      "uncachedMs": 0.778,
+      "cachedColdMs": 0.967,
+      "cachedMs": {
+        "add": 0.037,
+        "switch": 0.042,
+        "retract": 0.041,
+        "clear": 0.027,
+        "same": 0.023
+      },
+      "cachedAvgMs": 0.034,
+      "prunedUncachedMs": 0.051,
+      "prunedCachedMs": 0.028
+    },
+    {
+      "model": "hailfinder",
+      "nodes": 56,
+      "maxCliqueEntries": 3267,
+      "treewidth": 4,
+      "uncachedMs": 0.322,
+      "cachedColdMs": 0.608,
+      "cachedMs": {
+        "add": 0.044,
+        "switch": 0.065,
+        "retract": 0.057,
+        "clear": 0.031,
+        "same": 0.02
+      },
+      "cachedAvgMs": 0.042,
+      "prunedUncachedMs": 0.032,
+      "prunedCachedMs": 0.032
+    },
+    {
+      "model": "pathfinder",
+      "nodes": 109,
+      "maxCliqueEntries": 32256,
+      "treewidth": 6,
+      "uncachedMs": 2.909,
+      "cachedColdMs": 2.907,
+      "cachedMs": {
+        "add": 0.347,
+        "switch": 0.382,
+        "retract": 0.379,
+        "clear": 0.217,
+        "same": 0.063
+      },
+      "cachedAvgMs": 0.288,
+      "prunedUncachedMs": 0.063,
+      "prunedCachedMs": 0.243
+    },
+    {
+      "model": "pigs",
+      "nodes": 441,
+      "maxCliqueEntries": 177147,
+      "treewidth": 10,
+      "uncachedMs": 19.375,
+      "cachedColdMs": 19.372,
+      "cachedMs": {
+        "add": 2.426,
+        "switch": 2.914,
+        "retract": 2.857,
+        "clear": 1.304,
+        "same": 0.129
+      },
+      "cachedAvgMs": 1.973,
+      "prunedUncachedMs": 0.053,
+      "prunedCachedMs": 2.047
+    },
+    {
+      "model": "mildew",
+      "nodes": 35,
+      "maxCliqueEntries": 1756800,
+      "treewidth": 4,
+      "uncachedMs": 17.224,
+      "cachedColdMs": 19.331,
+      "cachedMs": {
+        "add": 6.37,
+        "switch": 12.067,
+        "retract": 12.007,
+        "clear": 3.707,
+        "same": 0.265
+      },
+      "cachedAvgMs": 6.358,
+      "prunedUncachedMs": 16.794,
+      "prunedCachedMs": 6.148
+    },
+    {
+      "model": "diabetes",
+      "nodes": 413,
+      "maxCliqueEntries": 154275,
+      "treewidth": 4,
+      "uncachedMs": 69.644,
+      "cachedColdMs": 74.956,
+      "cachedMs": {
+        "add": 21.23,
+        "switch": 28.559,
+        "retract": 28.659,
+        "clear": 12.685,
+        "same": 2.431
+      },
+      "cachedAvgMs": 18.588,
+      "prunedUncachedMs": 23.181,
+      "prunedCachedMs": 5.214
+    },
+    {
+      "model": "water",
+      "nodes": 32,
+      "maxCliqueEntries": 1769472,
+      "treewidth": 10,
+      "uncachedMs": 24.206,
+      "cachedColdMs": 25.956,
+      "cachedMs": {
+        "add": 8.121,
+        "switch": null,
+        "retract": null,
+        "clear": 4.37,
+        "same": 0.107
+      },
+      "cachedAvgMs": 5.535,
+      "prunedUncachedMs": 1.83,
+      "prunedCachedMs": 0.572
+    },
+    {
+      "model": "barley",
+      "nodes": 48,
+      "maxCliqueEntries": 13063680,
+      "treewidth": 7,
+      "uncachedMs": 125.139,
+      "cachedColdMs": 132.625,
+      "cachedMs": {
+        "add": 48.502,
+        "switch": 82.678,
+        "retract": 82.737,
+        "clear": 26.62,
+        "same": 0.185
+      },
+      "cachedAvgMs": 45.543,
+      "prunedUncachedMs": 0.06,
+      "prunedCachedMs": 0.109
+    },
+    {
+      "model": "andes",
+      "nodes": 223,
+      "maxCliqueEntries": 262144,
+      "treewidth": 17,
+      "uncachedMs": 10.262,
+      "cachedColdMs": 11.211,
+      "cachedMs": {
+        "add": 1.277,
+        "switch": 2.205,
+        "retract": 2.028,
+        "clear": 0.709,
+        "same": 0.079
+      },
+      "cachedAvgMs": 1.195,
+      "prunedUncachedMs": 1.156,
+      "prunedCachedMs": 1.145
+    },
+    {
+      "model": "link",
+      "nodes": 724,
+      "maxCliqueEntries": 16777216,
+      "treewidth": 15,
+      "uncachedMs": 226.001,
+      "cachedColdMs": 232.571,
+      "cachedMs": {
+        "add": 75.397,
+        "switch": 104.358,
+        "retract": 102.843,
+        "clear": 39.806,
+        "same": 0.519
+      },
+      "cachedAvgMs": 64.19,
+      "prunedUncachedMs": 1.03,
+      "prunedCachedMs": 9.095
+    },
+    {
+      "model": "munin1",
+      "nodes": 186,
+      "maxCliqueEntries": 274400000,
+      "treewidth": 11,
+      "hugeModel": {
+        "trials": 24,
+        "rejected": 0,
+        "meanMs": 0.467,
+        "maxMs": 4.552,
+        "meanKept": 68.083
+      }
+    }
+  ]
+}

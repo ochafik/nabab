@@ -1,0 +1,259 @@
+{
+  "platform": "darwin arm64",
+  "node": "v26.8.1",
+  "models": [
+    {
+      "model": "asia",
+      "nodes": 8,
+      "maxCliqueEntries": 8,
+      "treewidth": 2,
+      "uncachedMs": 0.039,
+      "cachedColdMs": 0.46,
+      "cachedMs": {
+        "add": 0.016,
+        "switch": 0.016,
+        "retract": 0.016,
+        "clear": 0.014,
+        "same": 0.016
+      },
+      "cachedAvgMs": 0.016
+    },
+    {
+      "model": "child",
+      "nodes": 20,
+      "maxCliqueEntries": 216,
+      "treewidth": 3,
+      "uncachedMs": 0.172,
+      "cachedColdMs": 0.189,
+      "cachedMs": {
+        "add": 0.058,
+        "switch": 0.088,
+        "retract": 0.072,
+        "clear": 0.06,
+        "same": 0.064
+      },
+      "cachedAvgMs": 0.065
+    },
+    {
+      "model": "alarm",
+      "nodes": 37,
+      "maxCliqueEntries": 144,
+      "treewidth": 4,
+      "uncachedMs": 0.38,
+      "cachedColdMs": 0.442,
+      "cachedMs": {
+        "add": 0.115,
+        "switch": 0.165,
+        "retract": 0.142,
+        "clear": 0.111,
+        "same": 0.159
+      },
+      "cachedAvgMs": 0.129
+    },
+    {
+      "model": "insurance",
+      "nodes": 27,
+      "maxCliqueEntries": 28800,
+      "treewidth": 7,
+      "uncachedMs": 2.171,
+      "cachedColdMs": 2.278,
+      "cachedMs": {
+        "add": 1.07,
+        "switch": 1.062,
+        "retract": 1.05,
+        "clear": 1.041,
+        "same": 1.056
+      },
+      "cachedAvgMs": 1.057
+    },
+    {
+      "model": "hepar2",
+      "nodes": 70,
+      "maxCliqueEntries": 384,
+      "treewidth": 6,
+      "uncachedMs": 1.211,
+      "cachedColdMs": 0.849,
+      "cachedMs": {
+        "add": 0.187,
+        "switch": 0.187,
+        "retract": 0.187,
+        "clear": 0.181,
+        "same": 0.184
+      },
+      "cachedAvgMs": 0.185
+    },
+    {
+      "model": "win95pts",
+      "nodes": 76,
+      "maxCliqueEntries": 512,
+      "treewidth": 8,
+      "uncachedMs": 2.049,
+      "cachedColdMs": 1.712,
+      "cachedMs": {
+        "add": 0.182,
+        "switch": 0.181,
+        "retract": 0.178,
+        "clear": 0.176,
+        "same": 0.179
+      },
+      "cachedAvgMs": 0.18
+    },
+    {
+      "model": "hailfinder",
+      "nodes": 56,
+      "maxCliqueEntries": 3267,
+      "treewidth": 4,
+      "uncachedMs": 0.625,
+      "cachedColdMs": 0.613,
+      "cachedMs": {
+        "add": 0.271,
+        "switch": 0.267,
+        "retract": 0.263,
+        "clear": 0.259,
+        "same": 0.266
+      },
+      "cachedAvgMs": 0.266
+    },
+    {
+      "model": "pathfinder",
+      "nodes": 109,
+      "maxCliqueEntries": 32256,
+      "treewidth": 6,
+      "uncachedMs": 7.951,
+      "cachedColdMs": 7.158,
+      "cachedMs": {
+        "add": 4.637,
+        "switch": 5.466,
+        "retract": 4.711,
+        "clear": 4.638,
+        "same": 4.774
+      },
+      "cachedAvgMs": 4.768
+    },
+    {
+      "model": "pigs",
+      "nodes": 441,
+      "maxCliqueEntries": 177147,
+      "treewidth": 10,
+      "uncachedMs": 42.626,
+      "cachedColdMs": 32.867,
+      "cachedMs": {
+        "add": 15.318,
+        "switch": 15.58,
+        "retract": 15.337,
+        "clear": 14.325,
+        "same": 15.378
+      },
+      "cachedAvgMs": 15.112
+    },
+    {
+      "model": "mildew",
+      "nodes": 35,
+      "maxCliqueEntries": 1756800,
+      "treewidth": 4,
+      "uncachedMs": 68.219,
+      "cachedColdMs": 68.203,
+      "cachedMs": {
+        "add": 62.487,
+        "switch": 62.175,
+        "retract": 61.798,
+        "clear": 61.698,
+        "same": 61.774
+      },
+      "cachedAvgMs": 62.075
+    },
+    {
+      "model": "diabetes",
+      "nodes": 413,
+      "maxCliqueEntries": 154275,
+      "treewidth": 4,
+      "uncachedMs": 237.211,
+      "cachedColdMs": 220.197,
+      "cachedMs": {
+        "add": 204.146,
+        "switch": 201.708,
+        "retract": 204.828,
+        "clear": 201.504,
+        "same": 201.694
+      },
+      "cachedAvgMs": 202.959
+    },
+    {
+      "model": "water",
+      "nodes": 32,
+      "maxCliqueEntries": 1769472,
+      "treewidth": 10,
+      "uncachedMs": 123.459,
+      "cachedColdMs": 127.293,
+      "cachedMs": {
+        "add": 117.647,
+        "switch": null,
+        "retract": null,
+        "clear": 117.201,
+        "same": 117.325
+      },
+      "cachedAvgMs": 117.445
+    },
+    {
+      "model": "barley",
+      "nodes": 48,
+      "maxCliqueEntries": 13063680,
+      "treewidth": 7,
+      "uncachedMs": 562.075,
+      "cachedColdMs": 555.186,
+      "cachedMs": {
+        "add": 550.564,
+        "switch": 552.931,
+        "retract": 541.027,
+        "clear": 560.72,
+        "same": 544.295
+      },
+      "cachedAvgMs": 551.423
+    },
+    {
+      "model": "andes",
+      "nodes": 223,
+      "maxCliqueEntries": 262144,
+      "treewidth": 17,
+      "uncachedMs": 353.239,
+      "cachedColdMs": 344.15,
+      "cachedMs": {
+        "add": 8.978,
+        "switch": 8.332,
+        "retract": 8.155,
+        "clear": 8.402,
+        "same": 8.966
+      },
+      "cachedAvgMs": 8.649
+    },
+    {
+      "model": "link",
+      "nodes": 724,
+      "maxCliqueEntries": 16777216,
+      "treewidth": 15,
+      "uncachedMs": 1046.816,
+      "cachedColdMs": 1599.25,
+      "cachedMs": {
+        "add": 769.196,
+        "switch": 736.213,
+        "retract": 761.591,
+        "clear": 765.425,
+        "same": 755.311
+      },
+      "cachedAvgMs": 761.444
+    },
+    {
+      "model": "munin1",
+      "nodes": 186,
+      "maxCliqueEntries": 274400000,
+      "treewidth": 11,
+      "hugeModel": {
+        "trials": 24,
+        "rejected": 24,
+        "meanMs": null,
+        "maxMs": null,
+        "meanKept": 0
+      }
+    }
+  ]
+}

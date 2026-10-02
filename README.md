@@ -14,7 +14,8 @@ Nabab is a pure TypeScript library for exact and approximate inference on discre
 
 - **Multiple inference algorithms**
   - **Junction Tree (JT)** -- exact inference via clique tree message passing
-  - **Cached JT** -- reuses the junction tree structure across queries; only rebuilds evidence-affected clique potentials (up to 8x faster on repeated queries)
+  - **Cached JT** -- keeps a calibrated junction tree between queries: new evidence costs one message pass, retracting or switching evidence re-initialises from cached clique products, and repeating a query is free (10-30x faster per query on the large benchmark models)
+  - **Query pruning** -- `queryVariables` drops barren and d-separated nodes before building the junction tree, so single-variable queries stay cheap even on networks whose full junction tree is too large (e.g. munin1)
   - **Variable Elimination (VE)** -- exact single-variable query, often faster than full JT when you only need one posterior
   - **Loopy Belief Propagation (LBP)** -- approximate sum-product message passing on the factor graph; fast on high-treewidth networks where exact methods struggle
   - **Worker-based inference** -- runs inference in a Web Worker (browser) or `worker_threads` (Node.js) to keep the main thread responsive
@@ -112,10 +113,27 @@ import { BayesianNetwork, CachedInferenceEngine } from 'nabab';
 const network = BayesianNetwork.fromXmlBif(xmlbifContent);
 const engine = new CachedInferenceEngine(network);
 
-// First call builds the junction tree; subsequent calls reuse it
+// First call builds the junction tree; the tree then stays calibrated, so
+// adding evidence is one message pass and an unchanged query is free
 const result1 = engine.infer(new Map([['Alarm', 'True']]));
-const result2 = engine.infer(new Map([['Earthquake', 'True']]));
+const result2 = engine.infer(new Map([['Alarm', 'True'], ['Earthquake', 'True']]));
 ```
+
+### Query only some variables
+
+```typescript
+// Prunes the network to what P(Burglary | Alarm=True) depends on before
+// building the junction tree. Works with infer() and CachedInferenceEngine.
+const result = network.infer(
+  new Map([['Alarm', 'True']]), undefined, { queryVariables: ['Burglary'] },
+);
+```
+
+The posteriors of the query variables are identical to a full run, but only they
+are returned, and evidence that is d-separated from them is ignored: the
+reported `probabilityOfEvidence` covers only the relevant evidence, and
+contradictions confined to irrelevant evidence are not reported as
+`ImpossibleEvidenceError`. Omit `queryVariables` when either matters.
 
 ### Approximate inference with Loopy Belief Propagation
 
@@ -348,37 +366,24 @@ npm run deploy   # builds the viewer + MCP App, then wrangler deploy
 
 ## Benchmark Results
 
-Benchmarks run on all 17 standard bnlearn models (Apple Silicon, Node.js v23). Timing includes parsing, junction tree construction, and inference with multiple evidence scenarios.
+Per-query latency on the standard bnlearn models (Apple Silicon, Node.js v26), measured by `bench/results/perf-bench.ts` on one long-lived `CachedInferenceEngine`, as the viewer uses it. Each model sees the same sequence of evidence changes (add three observations, repeat, switch one outcome, retract one, clear), with evidence taken from a seeded forward sample so it is always possible. Times are milliseconds per query, averaged over the sequence.
 
-### Single-query performance
+| Model | Nodes | Treewidth | Largest clique (entries) | Before (ms) | After (ms) | Speedup |
+|-------|------:|----------:|-------------------------:|------------:|-----------:|--------:|
+| alarm | 37 | 4 | 144 | 0.13 | 0.02 | 7.6x |
+| hepar2 | 70 | 6 | 384 | 0.18 | 0.04 | 4.9x |
+| pathfinder | 109 | 6 | 32,256 | 4.77 | 0.29 | 16.6x |
+| andes | 223 | 17 | 262,144 | 8.65 | 1.20 | 7.2x |
+| pigs | 441 | 10 | 177,147 | 15.1 | 1.97 | 7.7x |
+| diabetes | 413 | 4 | 154,275 | 203 | 18.6 | 10.9x |
+| mildew | 35 | 4 | 1,756,800 | 62.1 | 6.36 | 9.8x |
+| water | 32 | 10 | 1,769,472 | 117 | 5.54 | 21.2x |
+| barley | 48 | 7 | 13,063,680 | 551 | 45.5 | 12.1x |
+| link | 724 | 15 | 16,777,216 | 761 | 64.2 | 11.9x |
 
-| Model | Nodes | Edges | Treewidth | Parse (ms) | JT Build (ms) | Inference (ms) | Total (ms) |
-|-------|------:|------:|----------:|-----------:|---------------:|---------------:|-----------:|
-| asia | 8 | 8 | 2 | 0.20 | 0.06 | 0.07 | 0.50 |
-| sachs | 11 | 17 | 3 | 0.33 | 0.07 | 0.07 | 0.70 |
-| child | 20 | 25 | 3 | 1.34 | 0.14 | 0.62 | 3.50 |
-| alarm | 37 | 46 | 4 | 1.79 | 9.19 | 3.25 | 19.00 |
-| hailfinder | 56 | 66 | 4 | 1.64 | 0.93 | 4.42 | 15.01 |
-| hepar2 | 70 | 123 | 6 | 0.89 | 1.33 | 1.90 | 11.42 |
-| win95pts | 76 | 112 | 8 | 1.41 | 4.14 | 3.97 | 23.47 |
-| pathfinder | 109 | 195 | 6 | 25.86 | 3.50 | 26.52 | 163.65 |
-| andes | 223 | 338 | 17 | 1.82 | 532.72 | 592.53 | 3472.28 |
-| pigs | 441 | 592 | 10 | 6.60 | 34.28 | 121.47 | 664.43 |
-| diabetes | 413 | 602 | 4 | 74.90 | 27.16 | 1053.98 | 4731.94 |
-| link | 724 | 1125 | 15 | 7.95 | 424.95 | 6526.85 | 33254.34 |
+An unchanged query costs 0.01-2.4 ms (reading the marginals), adding evidence is a single message pass, and the one-shot `infer()` (which also builds the junction tree) is 2-5x faster, 34x on andes, where building the tree used to dominate. munin1 (largest clique 274M entries) cannot be answered in full, but with `queryVariables` the relevant sub-network is tiny: random single-variable queries with up to three observations take 0.5 ms on average. Where the speedups come from: in-place Hugin messages with precomputed loop plans instead of allocating new tables per message, a tree that stays calibrated between queries, junction-tree construction that reads the maximal cliques off the elimination order, and pruning.
 
-### Cached vs uncached inference (10 queries each)
-
-| Model | Uncached (ms) | Cached (ms) | Speedup |
-|-------|-------------:|------------:|--------:|
-| asia | 0.39 | 0.16 | 2.4x |
-| alarm | 8.52 | 3.25 | 2.6x |
-| hepar2 | 17.39 | 5.65 | 3.1x |
-| win95pts | 30.43 | 5.76 | 5.3x |
-| andes | 5795.06 | 695.86 | 8.3x |
-| pigs | 1267.28 | 936.97 | 1.4x |
-
-See `bench/results/baseline-summary.md` for the full table including all 16 models.
+See `bench/results/perf-summary.md` for the full before/after tables (one-shot, per step kind, single-variable queries), and `bench/results/before-full-summary.md` / `after-full-summary.md` for the original `run-full-bench.ts` harness (parse, junction tree build, inference, 10-query cached comparison).
 
 ## Architecture
 
@@ -391,8 +396,11 @@ src/lib/                -- Pure inference library (npm-publishable)
   evidence.ts           -- Evidence validation (validateEvidence, ImpossibleEvidenceError)
   graph.ts              -- DAG, moralization, min-fill triangulation, clique finding,
                            max-weight spanning tree junction tree construction
-  inference.ts          -- Junction tree inference (collect + distribute evidence)
-  cached-inference.ts   -- Cached JT engine (reuses structure across queries)
+  inference.ts          -- Junction tree inference (infer, size guard, InferOptions)
+  calibrated-tree.ts    -- Hugin propagation on a junction tree that stays calibrated:
+                           in-place messages, incremental evidence, lazy clique potentials
+  pruning.ts            -- Query-relevant pruning (Bayes-ball: barren + d-separated nodes)
+  cached-inference.ts   -- Cached JT engine (calibrated tree + pruned sub-engines)
   variable-elimination.ts -- Variable elimination with min-fill ordering
   loopy-bp.ts           -- Loopy belief propagation (damped sum-product)
   worker-inference.ts   -- Off-main-thread inference (Web Worker / worker_threads)
@@ -430,7 +438,7 @@ test/                   -- Vitest test suite (622 tests)
 bench/                  -- Benchmark runner and 17 bnlearn models
   models/               -- .bif files (asia, alarm, sachs, child, etc.)
   run-bench.ts          -- Benchmark runner
-  results/              -- Baseline results and comparison tools
+  results/              -- Baseline and before/after results (perf-bench.ts, run-full-bench.ts)
 
 wrangler.jsonc          -- Cloudflare Workers config (static assets, DO, text modules)
 scripts/copy-viewer-assets.mjs -- Copies examples + bench models into the build
@@ -444,21 +452,21 @@ Key exports from `nabab` (via `src/lib/index.ts`):
 
 - **`BayesianNetwork`** -- main entry point; wraps parsing + inference
   - `static fromXmlBif(content: string): BayesianNetwork`
-  - `infer(evidence?, likelihoodEvidence?): InferenceResult`
+  - `infer(evidence?, likelihoodEvidence?, options?: InferOptions): InferenceResult`
   - `query(variableName, evidence?): Distribution`
   - `priors(): Map<Variable, Distribution>`
   - `getVariable(name): Variable | undefined`
   - `getParents(variable): Variable[]`
   - `getChildren(variable): Variable[]`
-- **`CachedInferenceEngine`** -- cached junction tree for fast repeated queries
-  - `infer(evidence?, likelihoodEvidence?): InferenceResult`
+- **`CachedInferenceEngine`** -- calibrated junction tree for fast repeated queries
+  - `infer(evidence?, likelihoodEvidence?, options?: { queryVariables }): InferenceResult`
 - **`WorkerInferenceEngine`** -- async off-thread inference
   - `async infer(evidence?, likelihoodEvidence?): Promise<WorkerInferenceResult>`
   - `terminate(): void`
 
 ### Functions
 
-- **`infer(variables, cpts, evidence?, likelihoodEvidence?)`** -- junction tree inference
+- **`infer(variables, cpts, evidence?, likelihoodEvidence?, options?)`** -- junction tree inference (`options`: `maxCliqueEntries`, `eliminationHeuristic`, `queryVariables`)
 - **`variableElimination(variables, cpts, queryVariable, evidence?, ...)`** -- VE for single-variable queries
 - **`loopyBeliefPropagation(variables, cpts, evidence?, likelihoodEvidence?, options?)`** -- approximate inference
 - **`parseXmlBif(content)`** -- parse XMLBIF format

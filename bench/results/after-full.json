@@ -1,0 +1,317 @@
+{
+  "timestamp": "2026-10-02T00:41:39.188Z",
+  "platform": "darwin arm64",
+  "nodeVersion": "v26.8.1",
+  "models": [
+    {
+      "model": "alarm",
+      "nodes": 37,
+      "edges": 46,
+      "maxCliqueSize": 5,
+      "treewidth": 4,
+      "timings": {
+        "parseMs": 1.492,
+        "buildJTMs": 7.291,
+        "priorInferMs": 2.32,
+        "evidenceInferAvgMs": 0.799,
+        "totalMs": 14.297
+      },
+      "cachedInference": {
+        "uncached10Ms": 5.559,
+        "cached10Ms": 0.567,
+        "speedupRatio": 9.795
+      }
+    },
+    {
+      "model": "andes",
+      "nodes": 223,
+      "edges": 338,
+      "maxCliqueSize": 18,
+      "treewidth": 17,
+      "timings": {
+        "parseMs": 2.011,
+        "buildJTMs": 17.249,
+        "priorInferMs": 15.064,
+        "evidenceInferAvgMs": 19.369,
+        "totalMs": 111.801
+      },
+      "cachedInference": {
+        "uncached10Ms": 132.603,
+        "cached10Ms": 20.877,
+        "speedupRatio": 6.352
+      }
+    },
+    {
+      "model": "asia",
+      "nodes": 8,
+      "edges": 8,
+      "maxCliqueSize": 3,
+      "treewidth": 2,
+      "timings": {
+        "parseMs": 0.223,
+        "buildJTMs": 0.103,
+        "priorInferMs": 0.164,
+        "evidenceInferAvgMs": 0.081,
+        "totalMs": 0.813
+      },
+      "cachedInference": {
+        "uncached10Ms": 0.776,
+        "cached10Ms": 0.172,
+        "speedupRatio": 4.52
+      }
+    },
+    {
+      "model": "barley",
+      "nodes": 48,
+      "edges": 84,
+      "maxCliqueSize": 8,
+      "treewidth": 7,
+      "timings": {
+        "parseMs": 27.364,
+        "buildJTMs": 0.613,
+        "priorInferMs": 170.241,
+        "evidenceInferAvgMs": 179.37,
+        "totalMs": 915.699
+      },
+      "cachedInference": {
+        "uncached10Ms": 1719.265,
+        "cached10Ms": 955.443,
+        "speedupRatio": 1.799
+      }
+    },
+    {
+      "model": "child",
+      "nodes": 20,
+      "edges": 25,
+      "maxCliqueSize": 4,
+      "treewidth": 3,
+      "timings": {
+        "parseMs": 0.296,
+        "buildJTMs": 0.123,
+        "priorInferMs": 0.319,
+        "evidenceInferAvgMs": 0.223,
+        "totalMs": 1.633
+      },
+      "cachedInference": {
+        "uncached10Ms": 1.688,
+        "cached10Ms": 0.201,
+        "speedupRatio": 8.389
+      }
+    },
+    {
+      "model": "diabetes",
+      "nodes": 413,
+      "edges": 602,
+      "maxCliqueSize": 5,
+      "treewidth": 4,
+      "timings": {
+        "parseMs": 54.498,
+        "buildJTMs": 23.383,
+        "priorInferMs": 110.22,
+        "evidenceInferAvgMs": 87.348,
+        "totalMs": 537.491
+      },
+      "cachedInference": {
+        "uncached10Ms": 867.715,
+        "cached10Ms": 275.936,
+        "speedupRatio": 3.145
+      }
+    },
+    {
+      "model": "hailfinder",
+      "nodes": 56,
+      "edges": 66,
+      "maxCliqueSize": 5,
+      "treewidth": 4,
+      "timings": {
+        "parseMs": 1.116,
+        "buildJTMs": 0.33,
+        "priorInferMs": 0.554,
+        "evidenceInferAvgMs": 0.438,
+        "totalMs": 3.75
+      },
+      "cachedInference": {
+        "uncached10Ms": 6.483,
+        "cached10Ms": 0.609,
+        "speedupRatio": 10.638
+      }
+    },
+    {
+      "model": "hepar2",
+      "nodes": 70,
+      "edges": 123,
+      "maxCliqueSize": 7,
+      "treewidth": 6,
+      "timings": {
+        "parseMs": 0.865,
+        "buildJTMs": 0.674,
+        "priorInferMs": 0.877,
+        "evidenceInferAvgMs": 0.721,
+        "totalMs": 5.3
+      },
+      "cachedInference": {
+        "uncached10Ms": 11.579,
+        "cached10Ms": 0.533,
+        "speedupRatio": 21.739
+      }
+    },
+    {
+      "model": "insurance",
+      "nodes": 27,
+      "edges": 52,
+      "maxCliqueSize": 8,
+      "treewidth": 7,
+      "timings": {
+        "parseMs": 0.43,
+        "buildJTMs": 0.444,
+        "priorInferMs": 1.559,
+        "evidenceInferAvgMs": 1.293,
+        "totalMs": 7.605
+      },
+      "cachedInference": {
+        "uncached10Ms": 12.067,
+        "cached10Ms": 5.033,
+        "speedupRatio": 2.397
+      }
+    },
+    {
+      "model": "link",
+      "nodes": 724,
+      "edges": 1125,
+      "maxCliqueSize": 16,
+      "treewidth": 15,
+      "timings": {
+        "parseMs": 6.162,
+        "buildJTMs": 118.525,
+        "priorInferMs": 367.299,
+        "evidenceInferAvgMs": 315.557,
+        "totalMs": 1754.213
+      },
+      "cachedInference": {
+        "uncached10Ms": 3181.092,
+        "cached10Ms": 1500.192,
+        "speedupRatio": 2.12
+      }
+    },
+    {
+      "model": "mildew",
+      "nodes": 35,
+      "edges": 46,
+      "maxCliqueSize": 5,
+      "treewidth": 4,
+      "timings": {
+        "parseMs": 54.284,
+        "buildJTMs": 0.223,
+        "priorInferMs": 22.452,
+        "evidenceInferAvgMs": 23.044,
+        "totalMs": 169.134
+      },
+      "cachedInference": {
+        "uncached10Ms": 268.422,
+        "cached10Ms": 129.541,
+        "speedupRatio": 2.072
+      }
+    },
+    {
+      "model": "pathfinder",
+      "nodes": 109,
+      "edges": 195,
+      "maxCliqueSize": 7,
+      "treewidth": 6,
+      "timings": {
+        "parseMs": 20.108,
+        "buildJTMs": 2.36,
+        "priorInferMs": 4.231,
+        "evidenceInferAvgMs": 3.899,
+        "totalMs": 42.294
+      },
+      "cachedInference": {
+        "uncached10Ms": 40.826,
+        "cached10Ms": 8.03,
+        "speedupRatio": 5.084
+      }
+    },
+    {
+      "model": "pigs",
+      "nodes": 441,
+      "edges": 592,
+      "maxCliqueSize": 11,
+      "treewidth": 10,
+      "timings": {
+        "parseMs": 1.578,
+        "buildJTMs": 15.033,
+        "priorInferMs": 29.503,
+        "evidenceInferAvgMs": 29.209,
+        "totalMs": 162.95
+      },
+      "cachedInference": {
+        "uncached10Ms": 309.609,
+        "cached10Ms": 73.197,
+        "speedupRatio": 4.23
+      }
+    },
+    {
+      "model": "sachs",
+      "nodes": 11,
+      "edges": 17,
+      "maxCliqueSize": 4,
+      "treewidth": 3,
+      "timings": {
+        "parseMs": 0.243,
+        "buildJTMs": 0.084,
+        "priorInferMs": 0.113,
+        "evidenceInferAvgMs": 0.046,
+        "totalMs": 0.623
+      },
+      "cachedInference": {
+        "uncached10Ms": 0.461,
+        "cached10Ms": 0.115,
+        "speedupRatio": 4.006
+      }
+    },
+    {
+      "model": "water",
+      "nodes": 32,
+      "edges": 66,
+      "maxCliqueSize": 11,
+      "treewidth": 10,
+      "timings": {
+        "parseMs": 3.516,
+        "buildJTMs": 0.389,
+        "priorInferMs": 31.474,
+        "evidenceInferAvgMs": 21.863,
+        "totalMs": 122.832
+      },
+      "cachedInference": {
+        "uncached10Ms": 237.58,
+        "cached10Ms": 100.557,
+        "speedupRatio": 2.363
+      }
+    },
+    {
+      "model": "win95pts",
+      "nodes": 76,
+      "edges": 112,
+      "maxCliqueSize": 9,
+      "treewidth": 8,
+      "timings": {
+        "parseMs": 1.054,
+        "buildJTMs": 0.924,
+        "priorInferMs": 1.206,
+        "evidenceInferAvgMs": 1.019,
+        "totalMs": 7.258
+      },
+      "cachedInference": {
+        "uncached10Ms": 12.349,
+        "cached10Ms": 0.614,
+        "speedupRatio": 20.12
+      }
+    }
+  ],
+  "errors": [
+    {
+      "model": "munin1",
+      "error": "Skipped: inference too slow (>5 minutes per query, likely due to large CPT tables or high treewidth)"
+    }
+  ]
+}
