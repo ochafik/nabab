@@ -302,6 +302,8 @@ export function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Dist
           if (name && toMove.includes(name)) {
             const p = S.nodePositions.get(name)!;
             gEl.attr('transform', `translate(${p.x},${p.y})`);
+            const rg = registry.get(name);
+            if (rg) { rg.x = p.x; rg.y = p.y; }
           }
         });
         drawEdges(net);
@@ -310,7 +312,7 @@ export function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Dist
     ).attr('cursor', 'grab');
 
     ng.attr('class', 'node-g').attr('data-var', v.name);
-    const geom: NodeGeom = { name: v.name, g: ng as unknown as NodeGeom['g'], w, h, headerY: -h / 2 + 14, bars: [] };
+    const geom: NodeGeom = { name: v.name, g: ng as unknown as NodeGeom['g'], x: pos.x, y: pos.y, w, h, headerY: -h / 2 + 14, bars: [] };
     registry.set(v.name, geom);
     if (isDo) {
       ng.append('rect').attr('x', -w / 2 + 6).attr('y', -h / 2 - 7).attr('width', 26).attr('height', 14).attr('rx', 7)
@@ -385,6 +387,11 @@ export function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Dist
       else multiNode(ng, v, dist, w, h, nodeAccent, geom);
     }
   }
+
+  // Dedicated, last (topmost) layer for transient overlays (what-if preview).
+  // It lives inside the pan/zoom group so it follows the graph, never takes
+  // pointer events, and is the only thing hover is allowed to mutate.
+  contentG.append('g').attr('id', 'pv-layer').attr('pointer-events', 'none');
 }
 
 function drawEdges(net: BayesianNetwork): void {

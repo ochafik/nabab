@@ -220,16 +220,19 @@
     .tornado-param { flex: 1; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .tornado-range { width: 100px; height: 10px; background: var(--bg-bar); border-radius: 5px; overflow: hidden; position: relative; flex-shrink: 0; }
     /* What-if hover preview */
-    .node-g { transition: opacity 0.12s; }
-    .node-g.pv-calm { opacity: 0.4; }
+    /* Overlay lives in #pv-layer (inside the pan/zoom group) and #pv-hint (fixed);
+       hover never changes a node, so nothing here may transition geometry. */
+    #pv-layer { pointer-events: none; }
     .pv-spin { animation: pv-spin 0.8s linear infinite; transform-origin: 0 0; }
     @keyframes pv-spin { to { transform: rotate(360deg); } }
     #pv-hint {
-      display: none; position: fixed; right: 16px; top: 96px; width: max-content; max-width: 420px;
+      display: none; position: fixed; right: 16px; top: 96px; width: max-content; max-width: min(420px, calc(100vw - 32px));
       background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px;
       padding: 6px 10px; font-size: 12px; color: var(--text); box-shadow: 0 4px 16px var(--node-shadow);
       pointer-events: none; z-index: 50; line-height: 1.5;
     }
+    #pv-hint.pv-left { left: 16px; right: auto; }
+    #pv-hint.pv-right { right: 16px; left: auto; }
     #pv-hint.visible { display: block; }
     #pv-hint .pv-legend, #pv-hint .pv-keys { display: block; color: var(--text-secondary); font-size: 11px; }
     #pv-hint .pv-warn { color: var(--accent-hard); font-weight: 600; }

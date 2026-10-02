@@ -120,3 +120,15 @@ export function nearestAvailable(wanted: number, available: Iterable<number>): n
 export function snapPriority(wanted: number, count: number): number[] {
   return [...Array(count).keys()].sort((a, b) => Math.abs(a - wanted) - Math.abs(b - wanted) || a - b);
 }
+
+/**
+ * Which top corner of the viewport the floating hint sits in: the one on the
+ * opposite side of the pointer, with hysteresis (40%..60%) so it does not
+ * flip back and forth while the pointer hovers near the middle.
+ */
+export function hintSide(pointerX: number, viewportW: number, prev: 'left' | 'right' | null): 'left' | 'right' {
+  const f = viewportW > 0 ? pointerX / viewportW : 0.5;
+  if (prev === 'right' && f < 0.6) return 'right'; // pointer still on the left-ish side
+  if (prev === 'left' && f > 0.4) return 'left';
+  return f < 0.5 ? 'right' : 'left';
+}

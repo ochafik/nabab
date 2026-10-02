@@ -13,6 +13,7 @@
  * Worker engine so the UI thread is never blocked; if the exact snap is not
  * ready within ~150 ms the nearest computed one is shown and a spinner runs.
  */
+import * as d3 from 'd3';
 import { S, IS_MCP, getActive } from './state.js';
 import { effectiveEvidence, getObs, commitTarget, toggleIntervention } from './evidence.js';
 import { SNAPS, snapIndex, targetObs, obsWeights, type VarObs } from './evidence-model.js';
@@ -48,6 +49,7 @@ let jobMemo = new Map<string, JobInfo>();
 let spinnerTimer: ReturnType<typeof setTimeout> | null = null;
 let spinnerOn = false;
 let swallowClick = false;
+let pointerX = 0;
 let longPress: { timer: ReturnType<typeof setTimeout> | null; x: number; y: number; active: boolean } | null = null;
 
 function context(): string {
@@ -192,6 +194,7 @@ function update(): void {
     approx,
     spinner: spinnerOn && pending,
     impossible: res === null,
+    pointerX,
   });
 }
 
@@ -222,11 +225,20 @@ export function resetPreviewAfterRender(): void {
   spinnerOn = false;
   if (spinnerTimer) { clearTimeout(spinnerTimer); spinnerTimer = null; }
   computer?.cancel();
-  const hint = document.getElementById('pv-hint');
-  if (hint) hint.classList.remove('visible');
+  clearOverlay();
+  refreshOrigin();
 }
 
 // ─── Pointer wiring ──────────────────────────────────────────────────
+
+// Container origin in viewport pixels, cached outside pointermove (render,
+// resize) so hit-testing never forces layout via getScreenCTM / getBoundingClientRect.
+let originX = 0;
+let originY = 0;
+function refreshOrigin(): void {
+  const r = document.getElementById('graph-container')?.getBoundingClientRect();
+  if (r) { originX = r.left; originY = r.top; }
+}
 
 function hitAt(ev: MouseEvent): Hit | null {
   const t = ev.target as Element | null;
@@ -234,10 +246,12 @@ function hitAt(ev: MouseEvent): Hit | null {
   const name = ng?.getAttribute('data-var');
   if (!ng || !name) return null;
   const geom = registry.get(name);
-  const ctm = ng.getScreenCTM();
-  if (!geom || !ctm) return null;
-  const p = new DOMPoint(ev.clientX, ev.clientY).matrixTransform(ctm.inverse());
-  return hitTestNode(geom, p.x, p.y);
+  const svg = ng.ownerSVGElement;
+  if (!geom || !svg) return null;
+  const z = d3.zoomTransform(svg); // reads a cached property, no layout
+  const x = (ev.clientX - originX - z.x) / z.k - geom.x;
+  const y = (ev.clientY - originY - z.y) / z.k - geom.y;
+  return hitTestNode(geom, x, y);
 }
 
 function targetFromHit(hit: Hit): Target | null {
@@ -253,9 +267,13 @@ function targetFromHit(hit: Hit): Target | null {
 export function initPreview(): void {
   const container = document.getElementById('graph-container');
   if (!container) return;
+  refreshOrigin();
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(refreshOrigin).observe(container);
+  window.addEventListener('resize', refreshOrigin);
 
   container.addEventListener('pointermove', (ev) => {
     if (!S.previewEnabled) return;
+    pointerX = ev.clientX;
     if (ev.pointerType === 'touch') {
       if (longPress) {
         if (longPress.active) {
@@ -280,6 +298,7 @@ export function initPreview(): void {
   container.addEventListener('pointerdown', (ev) => {
     if (ev.pointerType === 'touch') {
       if (!S.previewEnabled) return;
+      pointerX = ev.clientX;
       if (longPress?.timer) clearTimeout(longPress.timer);
       const hit = hitAt(ev);
       const t = hit && hit.zone === 'bar' ? targetFromHit(hit) : null;

@@ -26,6 +26,9 @@ export interface BarGeom {
 export interface NodeGeom {
   name: string;
   g: d3.Selection<SVGGElement, unknown, null, undefined>;
+  /** Node centre in graph space (kept in sync while dragging). */
+  x: number;
+  y: number;
   w: number;
   h: number;
   /** y of the header row. */

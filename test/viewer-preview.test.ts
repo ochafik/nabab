@@ -6,7 +6,7 @@ import {
 } from '../src/viewer/evidence-model.js';
 import {
   evidenceKey, previewKey, LruCache, computeDeltas, totalVariation, haloStrength, formatDelta,
-  formatProbabilityOfEvidence, nearestAvailable, snapPriority, type PosteriorsByName,
+  formatProbabilityOfEvidence, nearestAvailable, snapPriority, hintSide, type PosteriorsByName,
 } from '../src/viewer/preview-logic.js';
 import { PreviewComputer } from '../src/viewer/preview-computer.js';
 import { S, setNetwork, getActive, setIntervention, interventionKey } from '../src/viewer/state.js';
@@ -166,6 +166,19 @@ describe('deltas', () => {
     expect(nearestAvailable(3, [0, 4])).toBe(4);
     expect(nearestAvailable(2, [])).toBe(-1);
     expect(snapPriority(3, 5)).toEqual([3, 2, 4, 1, 0]);
+  });
+});
+
+describe('hintSide (floating hint placement)', () => {
+  it('sits on the side opposite the pointer', () => {
+    expect(hintSide(100, 1000, null)).toBe('right');
+    expect(hintSide(900, 1000, null)).toBe('left');
+  });
+  it('has hysteresis around the middle', () => {
+    expect(hintSide(550, 1000, 'right')).toBe('right');
+    expect(hintSide(450, 1000, 'left')).toBe('left');
+    expect(hintSide(650, 1000, 'right')).toBe('left');
+    expect(hintSide(350, 1000, 'left')).toBe('right');
   });
 });
 

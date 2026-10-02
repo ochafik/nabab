@@ -1,15 +1,19 @@
 /**
- * SVG overlay for the what-if preview: snap ticks on the hovered bar, ghost
+ * Overlay for the what-if preview: snap ticks on the hovered bar, ghost
  * markers + gain/loss segments on every affected bar, signed delta badges,
- * node halos scaled by total variation, calm (dimmed) unaffected nodes, a
- * spinner for slow inference and the legend / hint line.
+ * node halos scaled by total variation, a veil over unaffected nodes, a
+ * spinner for slow inference, and a floating hint.
  *
- * Everything is drawn into per-node `.pv-layer` groups on top of the existing
- * SVG (pointer-events: none) so a preview never re-renders the graph.
+ * Contract: a preview NEVER touches the graph. Everything is drawn into the
+ * single `<g id="pv-layer">` (last child of the pan/zoom group, pointer-events
+ * none) from geometry cached at render time (bar-registry), plus the fixed
+ * #pv-hint box. No node group, class, text or attribute outside those two is
+ * modified, no layout-forcing property is read, and drawing is coalesced to
+ * one pass per animation frame.
  */
 import { registry, type NodeGeom } from './bar-registry.js';
 import { SNAPS } from './evidence-model.js';
-import { haloStrength, formatDelta, type NodeDelta } from './preview-logic.js';
+import { haloStrength, formatDelta, hintSide, type NodeDelta } from './preview-logic.js';
 import { escapeHtml } from './cpt-panel.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -32,6 +36,8 @@ export interface OverlayModel {
   approx: boolean;
   spinner: boolean;
   impossible: boolean;
+  /** Pointer x in viewport pixels (places the hint away from it). */
+  pointerX: number;
 }
 
 function el<K extends keyof SVGElementTagNameMap>(parent: Element, tag: K, attrs: Record<string, string | number>): SVGElementTagNameMap[K] {
@@ -41,13 +47,9 @@ function el<K extends keyof SVGElementTagNameMap>(parent: Element, tag: K, attrs
   return e;
 }
 
-function layer(node: NodeGeom): SVGGElement {
-  const g = node.g.node()!;
-  const l = document.createElementNS(SVGNS, 'g');
-  l.setAttribute('class', 'pv-layer');
-  l.setAttribute('pointer-events', 'none');
-  g.appendChild(l);
-  return l;
+/** Per-node sub-group of the overlay layer, in the node's local coordinates. */
+function nodeLayer(root: SVGGElement, node: NodeGeom): SVGGElement {
+  return el(root, 'g', { transform: `translate(${node.x},${node.y})` });
 }
 
 function ghost(l: SVGGElement, bar: { x0: number; range: number; by: number; barH: number; val: number }, after: number): void {
@@ -84,29 +86,54 @@ function spinner(l: SVGGElement, node: NodeGeom): void {
   el(g, 'path', { d: 'M0,-6 A6,6 0 0 1 6,0', fill: 'none', stroke: 'var(--accent)', 'stroke-width': 2, 'stroke-linecap': 'round', class: 'pv-spin' });
 }
 
-/** Remove every preview artefact from the SVG and hide the hint. */
-export function clearOverlay(): void {
-  for (const node of registry.values()) {
-    const g = node.g.node();
-    if (!g) continue;
-    g.querySelectorAll(':scope > .pv-layer').forEach(n => n.remove());
-    g.classList.remove('pv-calm', 'pv-source');
-  }
-  document.getElementById('graph-container')?.classList.remove('pv-active');
-  const hint = document.getElementById('pv-hint');
-  if (hint) hint.classList.remove('visible');
+/** Translucent background-coloured veil: dims an unaffected node without touching it. */
+function veil(parent: Element, node: NodeGeom): void {
+  el(parent, 'rect', {
+    x: node.x - node.w / 2 - 2, y: node.y - node.h / 2 - 2, width: node.w + 4, height: node.h + 4, rx: 10,
+    fill: 'var(--bg)', opacity: 0.6,
+  });
 }
 
-export function drawOverlay(m: OverlayModel): void {
-  clearOverlay();
-  const container = document.getElementById('graph-container');
-  container?.classList.add('pv-active');
-  const src = registry.get(m.sourceName);
-  if (!src) return;
+let pending: OverlayModel | null = null;
+let frame = 0;
+let side: 'left' | 'right' | null = null;
+let lastHint = '';
+let viewportW = typeof window !== 'undefined' ? window.innerWidth : 1000;
+if (typeof window !== 'undefined') window.addEventListener('resize', () => { viewportW = window.innerWidth; });
 
-  // Source node: ticks, target weights, halo.
-  const sl = layer(src);
-  src.g.node()!.classList.add('pv-source');
+/** Remove every preview artefact (one `replaceChildren`) and hide the hint. */
+export function clearOverlay(): void {
+  pending = null;
+  if (frame) { cancelAnimationFrame(frame); frame = 0; }
+  const root = document.getElementById('pv-layer');
+  if (root && root.firstChild) root.replaceChildren();
+  const hint = document.getElementById('pv-hint');
+  if (hint && hint.classList.contains('visible')) hint.classList.remove('visible');
+  lastHint = '';
+}
+
+/** Schedule a (coalesced) redraw: at most one pass per animation frame. */
+export function drawOverlay(m: OverlayModel): void {
+  pending = m;
+  if (!frame) frame = requestAnimationFrame(flush);
+}
+
+function flush(): void {
+  frame = 0;
+  const m = pending;
+  pending = null;
+  if (m) paint(m);
+}
+
+function paint(m: OverlayModel): void {
+  const root = document.getElementById('pv-layer') as SVGGElement | null;
+  const src = registry.get(m.sourceName);
+  if (!root || !src) return;
+  root.replaceChildren();
+  const veils = el(root, 'g', {});
+
+  // Source node: halo, ticks, target weights.
+  const sl = nodeLayer(root, src);
   el(sl, 'rect', {
     x: -src.w / 2 - 3, y: -src.h / 2 - 3, width: src.w + 6, height: src.h + 6, rx: 10,
     fill: 'none', stroke: 'var(--accent)', 'stroke-width': 2, 'stroke-dasharray': '5,3', opacity: 0.9,
@@ -146,12 +173,11 @@ export function drawOverlay(m: OverlayModel): void {
     for (const [name, d] of m.deltas) {
       const node = registry.get(name);
       if (!node || m.skip.has(name)) continue;
-      const g = node.g.node()!;
       const strength = haloStrength(d.tvd);
-      if (strength === 0) { g.classList.add('pv-calm'); continue; }
+      if (strength === 0) { veil(veils, node); continue; }
       changed++;
       if (!biggest || d.tvd > biggest.tvd) biggest = d;
-      const l = layer(node);
+      const l = nodeLayer(root, node);
       el(l, 'rect', {
         x: -node.w / 2 - 3, y: -node.h / 2 - 3, width: node.w + 6, height: node.h + 6, rx: 10,
         fill: 'none', stroke: 'var(--pv-halo)', 'stroke-width': 1.5 + 4 * strength, opacity: 0.25 + 0.7 * strength,
@@ -169,7 +195,7 @@ export function drawOverlay(m: OverlayModel): void {
       }
     }
   } else if (m.impossible) {
-    for (const [name, node] of registry) if (name !== m.sourceName) node.g.node()!.classList.add('pv-calm');
+    for (const [name, node] of registry) if (name !== m.sourceName) veil(veils, node);
   }
   updateHint(m, changed, biggest);
 }
@@ -186,9 +212,17 @@ function updateHint(m: OverlayModel, changed: number, biggest: NodeDelta | null)
     if (biggest) status += `; largest: <b>${escapeHtml(biggest.name)}</b> ${escapeHtml(biggest.maxOutcome)} ${formatDelta(biggest.maxDelta)}`;
   }
   if (m.approx) status += ' <i>(nearest computed value)</i>';
-  hint.innerHTML =
+  const html =
     `<b>What if</b> ${escapeHtml(m.targetText)} &mdash; ${status}` +
     `<span class="pv-legend"><i class="pv-chip pv-chip-gain"></i>gain <i class="pv-chip pv-chip-loss"></i>loss <i class="pv-chip pv-chip-halo"></i>size of change</span>` +
     `<span class="pv-keys">click to commit &middot; Esc to cancel</span>`;
-  hint.classList.add('visible');
+  if (html !== lastHint) { hint.innerHTML = html; lastHint = html; }
+  // Float in the top corner opposite the pointer: never over the hovered node.
+  const next = hintSide(m.pointerX, viewportW, side);
+  if (next !== side) {
+    side = next;
+    hint.classList.toggle('pv-left', next === 'left');
+    hint.classList.toggle('pv-right', next === 'right');
+  }
+  if (!hint.classList.contains('visible')) hint.classList.add('visible');
 }
