@@ -30,9 +30,9 @@ const CAP_RENDER_MS = 3000;     // navigation -> everything drawn
 const CAP_TASK_MS = 1000;       // longest single main-thread task
 /** Models known to be heavy (measured on a laptop); they get a looser absolute cap, still catching a blow-up. */
 const HEAVY: Record<string, { render: number; task: number }> = {
-  'bench/link.bif': { render: 2500, task: 400 },
-  'bench/diabetes.bif': { render: 2500, task: 400 },
-  'bench/pigs.bif': { render: 1500, task: 300 },
+  'bench/link.bif': { render: 2000, task: 400 },
+  'bench/diabetes.bif': { render: 2000, task: 400 },
+  'bench/pigs.bif': { render: 1200, task: 300 },
 };
 const FACTOR = 2.5;
 const SLACK_MS = 300;
