@@ -107,6 +107,8 @@ export interface CalibratedTreeOptions {
 export class CalibratedTree {
   readonly junctionTree: JunctionTree;
 
+  private readonly _variables: readonly Variable[];
+  private readonly _cpts: readonly CPT[];
   private readonly _cliques: readonly (readonly Variable[])[];
   private readonly _cliqueSizes: number[];
   private readonly _edges: Edge[] = [];
@@ -128,6 +130,7 @@ export class CalibratedTree {
    * evidence only needs messages along the paths from the observed cliques to
    * the root.
    */
+  private readonly _cacheInitialPotentials: boolean;
   private _base: Float64Array[] | null = null;
   private _baseSep: Float64Array[] | null = null;
   private readonly _potentials: Array<Float64Array | null>;
@@ -136,8 +139,8 @@ export class CalibratedTree {
   private _likelihoods: Likelihoods = new Map();
   private readonly _componentValid: boolean[];
   private readonly _componentTotal: number[];
-  /** Memoised clique-potential snapshot shared by results of the current state. */
-  private _snapshot: (() => Map<number, Factor>) | null = null;
+  /** Incremented whenever the potentials are about to change. */
+  private _version = 0;
 
   constructor(
     variables: readonly Variable[],
@@ -146,6 +149,8 @@ export class CalibratedTree {
     options?: CalibratedTreeOptions,
   ) {
     this.junctionTree = junctionTree;
+    this._variables = variables;
+    this._cpts = cpts;
     const cliques = junctionTree.cliques;
     this._cliques = cliques;
     this._cliqueSizes = cliques.map(c => tableSize(c));
@@ -234,10 +239,10 @@ export class CalibratedTree {
     });
 
     this._potentials = cliques.map(() => null);
-    if (options?.cacheInitialPotentials) this._buildCollectedPrior();
+    this._cacheInitialPotentials = options?.cacheInitialPotentials ?? false;
   }
 
-  /** Compute and keep the prior potentials after a collect pass over every component. */
+  /** Compute and keep the prior potentials after a collect pass over every component (once, on first use). */
   private _buildCollectedPrior(): void {
     const base = this._cliques.map((_, i) => this._buildInitial(i, new Float64Array(this._cliqueSizes[i])));
     base.forEach((pot, i) => (this._potentials[i] = pot));
@@ -314,7 +319,7 @@ export class CalibratedTree {
       if (!this._componentValid[comp]) reinit.add(comp);
     }
 
-    if (reinit.size > 0 || absorb.some(a => a.length > 0)) this._flushSnapshot();
+    if (reinit.size > 0 || absorb.some(a => a.length > 0)) this._version++;
     for (const comp of reinit) this._componentValid[comp] = false;
     this._likelihoods = next;
 
@@ -335,6 +340,7 @@ export class CalibratedTree {
 
   /** Reset a component to its prior, add its likelihoods, and propagate in full. */
   private _reinitialize(comp: number): void {
+    if (this._cacheInitialPotentials && !this._base) this._buildCollectedPrior();
     const cliques = this._components[comp];
     const base = this._base;
     for (const i of cliques) {
@@ -459,22 +465,27 @@ export class CalibratedTree {
 
   /**
    * Define `cliquePotentials` on a result as a lazily computed, memoised
-   * property (normalising every clique is a full pass over the tree, and most
-   * callers only read posteriors). The value is forced before the tree is next
-   * modified, so it always reflects the query that produced the result.
+   * property: normalising every clique is a full pass over the tree and most
+   * callers only read posteriors. While the tree still holds the state that
+   * produced the result the value is read from it; if a later query has
+   * changed the tree, the state is rebuilt on a scratch tree from the
+   * evidence the result was produced with.
    */
   defineCliquePotentials(result: object): void {
-    if (!this._snapshot) {
-      let value: Map<number, Factor> | undefined;
-      this._snapshot = () => (value ??= this.normalizedCliquePotentials());
-    }
-    const snapshot = this._snapshot;
-    Object.defineProperty(result, 'cliquePotentials', { get: snapshot, enumerable: true, configurable: true });
-  }
-
-  private _flushSnapshot(): void {
-    this._snapshot?.();
-    this._snapshot = null;
+    const version = this._version;
+    const likelihoods = this._likelihoods;
+    let value: Map<number, Factor> | undefined;
+    const compute = () => {
+      if (version === this._version) return this.normalizedCliquePotentials();
+      const scratch = new CalibratedTree(this._variables, this._cpts, this.junctionTree);
+      scratch.calibrate(likelihoods);
+      return scratch.normalizedCliquePotentials();
+    };
+    Object.defineProperty(result, 'cliquePotentials', {
+      get: () => (value ??= compute()),
+      enumerable: true,
+      configurable: true,
+    });
   }
 }
 

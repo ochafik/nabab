@@ -15,6 +15,8 @@ import { CachedInferenceEngine } from '../src/lib/cached-inference.js';
 import { infer } from '../src/lib/inference.js';
 import { variableElimination } from '../src/lib/variable-elimination.js';
 import { relevantNetwork } from '../src/lib/pruning.js';
+import { buildDag } from '../src/lib/inference.js';
+import { eliminate, moralize, triangulate, findMaximalCliques, maximalCliquesFromElimination } from '../src/lib/graph.js';
 import { ImpossibleEvidenceError } from '../src/lib/evidence.js';
 import { mulberry32 } from '../src/lib/sampling.js';
 import type { Variable, Evidence, LikelihoodEvidence, Distribution } from '../src/lib/types.js';
@@ -290,6 +292,32 @@ describe('incremental behaviour', () => {
   });
 });
 
+describe('networks beyond the clique budget (munin1)', () => {
+  const net = loadModel('munin1');
+  const q = net.getVariable('R_DIFFN_MEDD2_BLOCK')!;
+  const obs = net.variables.filter(v => net.getParents(v).length > 0).slice(40, 42);
+  const evidence: Evidence = new Map(obs.map(v => [v.name, v.outcomes[0]]));
+
+  it('refuses a full query but answers single-variable queries on the pruned network', () => {
+    expect(() => net.infer()).toThrow(/exact inference aborted/);
+    expect(() => new CachedInferenceEngine(net).infer()).toThrow(/exact inference aborted/);
+
+    const engine = new CachedInferenceEngine(net);
+    for (const ev of [undefined, evidence, undefined]) {
+      const oneShot = net.infer(ev, undefined, { queryVariables: [q] });
+      const cached = engine.infer(ev, undefined, { queryVariables: [q] });
+      expect([...oneShot.posteriors.keys()]).toEqual([q]);
+      expectClose(cached.posteriors.get(q), oneShot.posteriors.get(q), 'cached vs one-shot');
+      // Variable elimination on the full network takes seconds here; run it on the requisite part
+      // (an independent algorithm; the requisite part itself is checked on the bnlearn models above).
+      const observed = new Set(net.variables.filter(v => ev?.has(v.name)));
+      const sub = relevantNetwork(net.variables, net.cpts, new Set([q]), observed);
+      const subEvidence = new Map([...(ev ?? [])].filter(([name]) => sub.variables.some(v => v.name === name)));
+      expectClose(oneShot.posteriors.get(q), variableElimination(sub.variables, sub.cpts, q, subEvidence), 'vs variable elimination');
+    }
+  });
+});
+
 describe('relevantNetwork (Bayes-ball pruning)', () => {
   const net = loadModel('asia');
   const v = (name: string) => net.getVariable(name)!;
@@ -314,4 +342,18 @@ describe('relevantNetwork (Bayes-ball pruning)', () => {
     expect(names(r.variables)).not.toContain('bronc');
     expect(names(r.cpts.map(c => c.variable))).toEqual(['lung']);
   });
+});
+
+describe('maximalCliquesFromElimination', () => {
+  it.each(['asia', 'child', 'alarm', 'insurance', 'hepar2', 'win95pts', 'hailfinder', 'pathfinder', 'andes'])(
+    'finds the same maximal cliques as findMaximalCliques on %s',
+    name => {
+      const net = loadModel(name);
+      const moral = moralize(buildDag(net.variables, net.cpts));
+      const key = (cliques: Variable[][]) => cliques.map(c => c.map(v => v.name).join(',')).sort();
+      const fast = key(maximalCliquesFromElimination(eliminate(moral)));
+      const slow = key(findMaximalCliques(triangulate(moral)));
+      expect(fast).toEqual(slow);
+    },
+  );
 });

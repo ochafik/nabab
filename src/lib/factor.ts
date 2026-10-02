@@ -520,6 +520,8 @@ export function sumInto(src: Float64Array, plan: LoopPlan, out: Float64Array): v
   for (let o = 0; o < outer; o++) {
     if (innerStride === 0) {
       out[base] += sumRange(src, pos, pos + inner);
+    } else if (innerStride === 1) {
+      for (let j = 0; j < inner; j++) out[base + j] += src[pos + j];
     } else {
       let t = base;
       for (let j = 0; j < inner; j++, t += innerStride) out[t] += src[pos + j];
@@ -552,6 +554,8 @@ export function multiplyInto(dst: Float64Array, plan: LoopPlan, small: Float64Ar
     if (innerStride === 0) {
       const w = small[base];
       for (let j = 0; j < inner; j++) dst[pos + j] *= w;
+    } else if (innerStride === 1) {
+      for (let j = 0; j < inner; j++) dst[pos + j] *= small[base + j];
     } else {
       let t = base;
       for (let j = 0; j < inner; j++, t += innerStride) dst[pos + j] *= small[t];

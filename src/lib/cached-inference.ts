@@ -13,11 +13,18 @@
  * network, then reused for later queries that prune to the same network.
  */
 import type { Variable, CPT, Evidence, LikelihoodEvidence } from './types.js';
-import { type InferenceResult, buildDag, evidenceSets, readResult } from './inference.js';
+import {
+  type InferenceResult,
+  assertWithinCliqueBudget,
+  buildDag,
+  evidenceSets,
+  readResult,
+  resolveMaxCliqueEntries,
+} from './inference.js';
 import { validateEvidence } from './evidence.js';
 import { CalibratedTree, buildLikelihoods } from './calibrated-tree.js';
 import { relevantNetwork, resolveQueryVariables } from './pruning.js';
-import { type JunctionTree, buildJunctionTree } from './graph.js';
+import { type JunctionTree, type CostEstimate, buildJunctionTree, junctionTreeCost } from './graph.js';
 import { BayesianNetwork } from './network.js';
 
 /** Per-call options of `CachedInferenceEngine.infer`. */
@@ -32,22 +39,38 @@ export interface CachedInferOptions {
 /** How many pruned networks to keep engines for. */
 const MAX_PRUNED_ENGINES = 16;
 
-/** A calibrated tree over (a pruned part of) the network. */
-interface Engine {
+/**
+ * Below this many total clique-table entries a full query takes a few
+ * milliseconds, less than building a junction tree for a pruned network, so
+ * `queryVariables` only restricts which posteriors are returned.
+ */
+const PRUNE_MIN_TABLE_ENTRIES = 2_000_000;
+
+/** The junction tree of (a pruned part of) the network, and its cost. */
+interface Structure {
   readonly variables: readonly Variable[];
+  readonly cpts: readonly CPT[];
   readonly junctionTree: JunctionTree;
-  /** Undefined for a network with no cliques. */
-  readonly tree?: CalibratedTree;
+  readonly cost: CostEstimate;
+  /** Created on first use: allocating tables of an over-budget tree is refused. */
+  tree?: CalibratedTree;
 }
 
-function createEngine(variables: readonly Variable[], cpts: readonly CPT[]): Engine {
+function createStructure(variables: readonly Variable[], cpts: readonly CPT[]): Structure {
   const junctionTree = buildJunctionTree(buildDag(variables, cpts));
-  if (junctionTree.cliques.length === 0) return { variables, junctionTree };
-  return {
-    variables,
-    junctionTree,
-    tree: new CalibratedTree(variables, cpts, junctionTree, { cacheInitialPotentials: true }),
-  };
+  return { variables, cpts, junctionTree, cost: junctionTreeCost(junctionTree) };
+}
+
+/** The calibrated tree for a structure; throws if its largest clique is over the size budget. */
+function treeOf(structure: Structure): CalibratedTree | undefined {
+  if (structure.junctionTree.cliques.length === 0) return undefined;
+  if (!structure.tree) {
+    assertWithinCliqueBudget(structure.cost, resolveMaxCliqueEntries());
+    structure.tree = new CalibratedTree(structure.variables, structure.cpts, structure.junctionTree, {
+      cacheInitialPotentials: true,
+    });
+  }
+  return structure.tree;
 }
 
 /**
@@ -71,9 +94,9 @@ export class CachedInferenceEngine {
   private _network: BayesianNetwork;
 
   private _fingerprint: string | null = null;
-  private _full: Engine | null = null;
-  /** Engines for pruned networks, least recently used first. */
-  private _pruned = new Map<string, Engine>();
+  private _full: Structure | null = null;
+  /** Structures of pruned networks, least recently used first. */
+  private _pruned = new Map<string, Structure>();
 
   constructor(network: BayesianNetwork) {
     this._network = network;
@@ -81,38 +104,39 @@ export class CachedInferenceEngine {
 
   // ── Cache management ──
 
-  private _ensureCache(): Engine {
+  private _ensureCache(): Structure {
     const fp = networkFingerprint(this._network);
     if (this._fingerprint !== fp) {
       this._fingerprint = fp;
       this._full = null;
       this._pruned.clear();
     }
-    return (this._full ??= createEngine(this._network.variables, this._network.cpts));
+    return (this._full ??= createStructure(this._network.variables, this._network.cpts));
   }
 
-  /** The engine for the part of the network needed by `query` given `observed`. */
-  private _engineFor(
-    full: Engine,
+  /** The structure for the part of the network needed by `query` given the evidence. */
+  private _structureFor(
+    full: Structure,
     query: ReadonlySet<Variable>,
     observed: ReadonlySet<Variable>,
     soft: ReadonlySet<Variable>,
-  ): Engine {
+  ): Structure {
+    if (full.cost.totalCliqueEntries < PRUNE_MIN_TABLE_ENTRIES) return full;
     const { variables, cpts } = this._network;
     const relevant = relevantNetwork(variables, cpts, query, observed, soft);
     if (relevant.variables.length === variables.length && relevant.cpts.length === cpts.length) return full;
 
     const index = new Map(variables.map((v, i) => [v, i]));
     const key = `${relevant.variables.map(v => index.get(v)).join(',')}|${relevant.cpts.map(c => index.get(c.variable)).join(',')}`;
-    let engine = this._pruned.get(key);
-    if (engine) {
+    let structure = this._pruned.get(key);
+    if (structure) {
       this._pruned.delete(key); // refresh recency
     } else {
-      engine = createEngine(relevant.variables, relevant.cpts);
+      structure = createStructure(relevant.variables, relevant.cpts);
       if (this._pruned.size >= MAX_PRUNED_ENGINES) this._pruned.delete(this._pruned.keys().next().value!);
     }
-    this._pruned.set(key, engine);
-    return engine;
+    this._pruned.set(key, structure);
+    return structure;
   }
 
   // ── Inference ──
@@ -123,15 +147,15 @@ export class CachedInferenceEngine {
     validateEvidence(variables, evidence, likelihoodEvidence);
 
     const query = resolveQueryVariables(variables, options?.queryVariables);
-    let engine = full;
-    if (query) {
-      engine = this._engineFor(full, query, ...evidenceSets(variables, evidence, likelihoodEvidence));
-    }
+    const structure = query
+      ? this._structureFor(full, query, ...evidenceSets(variables, evidence, likelihoodEvidence))
+      : full;
 
-    if (!engine.tree) {
-      return { posteriors: new Map(), junctionTree: engine.junctionTree, cliquePotentials: new Map(), probabilityOfEvidence: 1 };
+    const tree = treeOf(structure);
+    if (!tree) {
+      return { posteriors: new Map(), junctionTree: structure.junctionTree, cliquePotentials: new Map(), probabilityOfEvidence: 1 };
     }
-    const probabilityOfEvidence = engine.tree.calibrate(buildLikelihoods(engine.variables, evidence, likelihoodEvidence));
-    return readResult(engine.tree, engine.variables, query, probabilityOfEvidence);
+    const probabilityOfEvidence = tree.calibrate(buildLikelihoods(structure.variables, evidence, likelihoodEvidence));
+    return readResult(tree, structure.variables, query, probabilityOfEvidence);
   }
 }

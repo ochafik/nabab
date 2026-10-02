@@ -59,7 +59,7 @@ export interface InferOptions {
 }
 
 /** Resolve the clique-size budget: explicit option > env var > default. */
-function resolveMaxCliqueEntries(opt?: number): number {
+export function resolveMaxCliqueEntries(opt?: number): number {
   if (opt !== undefined) return opt;
   const env = typeof process !== 'undefined' ? process.env?.NABAB_MAX_CLIQUE_ENTRIES : undefined;
   if (env !== undefined && env !== '') {
@@ -69,6 +69,21 @@ function resolveMaxCliqueEntries(opt?: number): number {
     return parsed;
   }
   return DEFAULT_MAX_CLIQUE_ENTRIES;
+}
+
+/** Throw the standard "exact inference aborted" error if a clique table would exceed the budget. */
+export function assertWithinCliqueBudget(cost: CostEstimate, budget: number): void {
+  if (cost.maxCliqueEntries <= budget) return;
+  const vars = cost.largestClique.map(v => v.name).join(', ');
+  const mb = Math.round((budget * 8) / 1e6);
+  throw new Error(
+    `nabab: exact inference aborted — largest junction-tree clique {${vars}} ` +
+    `(treewidth ${cost.treewidth}) would need ${cost.maxCliqueEntries.toLocaleString()} ` +
+    `table entries, exceeding the budget of ${budget.toLocaleString()} entries ` +
+    `(~${mb} MB per Float64 array). Raise options.maxCliqueEntries or the ` +
+    `NABAB_MAX_CLIQUE_ENTRIES env var (or set to Infinity to disable this guard), ` +
+    `or use an approximate method such as loopyBeliefPropagation().`,
+  );
 }
 
 /** Build the directed graph (DAG) implied by a set of CPTs. */
@@ -156,19 +171,7 @@ export function infer(
   // run first to stay fast on exactly the networks it needs to reject).
   const budget = resolveMaxCliqueEntries(options?.maxCliqueEntries);
   if (Number.isFinite(budget)) {
-    const cost = estimateJunctionTreeCost(dag, { heuristic: options?.eliminationHeuristic });
-    if (cost.maxCliqueEntries > budget) {
-      const vars = cost.largestClique.map(v => v.name).join(', ');
-      const mb = Math.round((budget * 8) / 1e6);
-      throw new Error(
-        `nabab: exact inference aborted — largest junction-tree clique {${vars}} ` +
-        `(treewidth ${cost.treewidth}) would need ${cost.maxCliqueEntries.toLocaleString()} ` +
-        `table entries, exceeding the budget of ${budget.toLocaleString()} entries ` +
-        `(~${mb} MB per Float64 array). Raise options.maxCliqueEntries or the ` +
-        `NABAB_MAX_CLIQUE_ENTRIES env var (or set to Infinity to disable this guard), ` +
-        `or use an approximate method such as loopyBeliefPropagation().`,
-      );
-    }
+    assertWithinCliqueBudget(estimateJunctionTreeCost(dag, { heuristic: options?.eliminationHeuristic }), budget);
   }
 
   const junctionTree = buildJunctionTree(dag, { heuristic: options?.eliminationHeuristic });

@@ -106,6 +106,11 @@ export interface EliminationResult {
   readonly maxCliqueEntries: number;
   /** Sum of table entries over every elimination clique (a cost/work proxy). */
   readonly totalCliqueEntries: number;
+  /**
+   * The elimination clique of each step, aligned with `order`: the eliminated
+   * vertex followed by its live neighbours.
+   */
+  readonly eliminationCliques: Variable[][];
 }
 
 /**
@@ -127,6 +132,7 @@ export function eliminate(
 
   const fillEdges: Array<[Variable, Variable]> = [];
   const order: Variable[] = [];
+  const eliminationCliques: Variable[][] = [];
   const remaining = new Set(graph.vertices);
   let inducedWidth = 0;
   let largestClique: Variable[] = [];
@@ -188,6 +194,7 @@ export function eliminate(
 
     // Clique formed at this step = {bestV} ∪ live neighbours.
     const ns = [...adj.get(bestV)!].filter(n => remaining.has(n));
+    eliminationCliques.push([bestV, ...ns]);
     if (ns.length > inducedWidth) inducedWidth = ns.length; // = clique size − 1
 
     // Track clique-table cost (product of member cardinalities).
@@ -215,7 +222,7 @@ export function eliminate(
     order.push(bestV);
   }
 
-  return { order, fillEdges, inducedWidth, largestClique, maxCliqueEntries, totalCliqueEntries };
+  return { order, fillEdges, inducedWidth, largestClique, maxCliqueEntries, totalCliqueEntries, eliminationCliques };
 }
 
 /**
@@ -284,6 +291,34 @@ export function findMaximalCliques(graph: UndirectedGraph): Clique[] {
   return result;
 }
 
+/**
+ * Maximal cliques of the triangulated graph, read off the elimination: every
+ * maximal clique is the elimination clique of some vertex v, and the clique of
+ * a vertex w that was eliminated before v is not maximal iff it contains v's
+ * (so only the elimination-tree parent can be absorbed). This replaces
+ * `findMaximalCliques` on the triangulated graph, which grows cliques by
+ * repeated subset tests and dominated junction-tree construction time.
+ * Cliques are sorted by variable name, like `findMaximalCliques`.
+ */
+export function maximalCliquesFromElimination(elimination: EliminationResult): Clique[] {
+  const { order, eliminationCliques } = elimination;
+  const position = new Map<Variable, number>();
+  order.forEach((v, i) => position.set(v, i));
+  const absorbed = new Array<boolean>(order.length).fill(false);
+  eliminationCliques.forEach(clique => {
+    if (clique.length < 2) return;
+    // The parent is the earliest-eliminated neighbour; the child's clique minus
+    // the child itself is a subset of the parent's, so equal sizes mean the
+    // parent's clique is exactly that and is absorbed.
+    let parent = position.get(clique[1])!;
+    for (let k = 2; k < clique.length; k++) parent = Math.min(parent, position.get(clique[k])!);
+    if (clique.length - 1 === eliminationCliques[parent].length) absorbed[parent] = true;
+  });
+  return eliminationCliques
+    .filter((_, i) => !absorbed[i])
+    .map(clique => [...clique].sort((a, b) => a.name.localeCompare(b.name)));
+}
+
 // ─── Junction tree ───────────────────────────────────────────────────
 
 export interface JunctionTree {
@@ -297,11 +332,24 @@ export interface JunctionTreeOptions {
   readonly heuristic?: EliminationHeuristic;
 }
 
+const eliminationMemo = new WeakMap<DirectedGraph, Map<EliminationHeuristic, EliminationResult>>();
+
+/**
+ * Elimination of a DAG's moral graph. Memoised per DAG object (DAGs are never
+ * mutated), because `infer` first estimates the cost to apply its size guard
+ * and then builds the tree from the very same elimination.
+ */
+function eliminateDag(dag: DirectedGraph, heuristic: EliminationHeuristic): EliminationResult {
+  let byHeuristic = eliminationMemo.get(dag);
+  if (!byHeuristic) eliminationMemo.set(dag, (byHeuristic = new Map()));
+  let result = byHeuristic.get(heuristic);
+  if (!result) byHeuristic.set(heuristic, (result = eliminate(moralize(dag), heuristic)));
+  return result;
+}
+
 /** Build a junction tree from a directed Bayesian network graph. */
 export function buildJunctionTree(dag: DirectedGraph, options?: JunctionTreeOptions): JunctionTree {
-  const moral = moralize(dag);
-  const triangulated = triangulate(moral, options?.heuristic ?? 'min-fill');
-  const cliques = findMaximalCliques(triangulated);
+  const cliques = maximalCliquesFromElimination(eliminateDag(dag, options?.heuristic ?? 'min-fill'));
 
   if (cliques.length === 0) {
     return { cliques: [], neighbors: new Map() };
@@ -422,8 +470,7 @@ export function junctionTreeCost(jt: JunctionTree): CostEstimate {
  * them, so both are proxies (upper bounds) rather than junction-tree-exact.
  */
 export function estimateJunctionTreeCost(dag: DirectedGraph, options?: JunctionTreeOptions): CostEstimate {
-  const moral = moralize(dag);
-  const e = eliminate(moral, options?.heuristic ?? 'min-fill');
+  const e = eliminateDag(dag, options?.heuristic ?? 'min-fill');
   return {
     treewidth: e.inducedWidth,
     maxCliqueSize: e.largestClique.length,
