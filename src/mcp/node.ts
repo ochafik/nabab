@@ -9,12 +9,12 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'crypto';
 import { createServer } from './server.js';
-import { createQueue } from './commands.js';
+import { createNodeAssets } from './node-assets.js';
 
 // ─── Transport modes ────────────────────────────────────────────────
 
 async function startStdio() {
-  const server = createServer();
+  const server = createServer({ assets: createNodeAssets() });
   await server.connect(new StdioServerTransport());
   console.error('Nabab MCP server running on stdio');
 }
@@ -27,7 +27,7 @@ async function startHttp() {
   const { default: cors } = await import('cors');
 
   const port = parseInt(process.env.PORT ?? '3001', 10);
-  const queue = createQueue();
+  const assets = createNodeAssets();
   const transports = new Map<string, StreamableHTTPServerTransport>();
 
   const app = express();
@@ -52,7 +52,7 @@ async function startHttp() {
         const sid = transport!.sessionId;
         if (sid) transports.delete(sid);
       };
-      const server = createServer({ queue });
+      const server = createServer({ assets });
       await server.connect(transport);
       await transport.handleRequest(req, res, req.body);
       return;
@@ -67,8 +67,7 @@ async function startHttp() {
 
   app.get('/', (_req, res) => {
     res.type('text/plain').send(
-      `Nabab MCP Server\n\nEndpoint: http://localhost:${port}/mcp\n` +
-      `Redis: ${process.env.UPSTASH_REDIS_REST_URL ? 'connected' : 'not configured (in-memory queue)'}\n`,
+      `Nabab MCP Server\n\nEndpoint: http://localhost:${port}/mcp\n`,
     );
   });
 

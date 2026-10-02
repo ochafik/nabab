@@ -24,13 +24,15 @@ export async function initMcpApp(): Promise<void> {
   /** Try to load a network from tool args (input or partial input). */
   function tryLoadFromArgs(args: Record<string, unknown> | undefined, partial = false): void {
     if (!args) return;
-    const source = args.source as string | undefined;
-    if (!source) return;
+    // The `network` argument is a handle, example name, URL or inline XMLBIF/BIF.
+    const source = args.network as string | undefined;
+    if (typeof source !== 'string' || !source) return;
 
-    // For URLs, we can't fetch client-side — wait for the server's tool result
-    if (/^https?:\/\/|^file:\/\//.test(source)) {
+    // Only inline XMLBIF/BIF can be parsed client-side; handles, names, URLs
+    // and JSON are resolved by the server — wait for its tool result.
+    if (!/^\s*(<|network\b|\/\/|\/\*)/.test(source)) {
       if (!partial) {
-        document.getElementById('network-name')!.textContent = 'Loading from URL…';
+        document.getElementById('network-name')!.textContent = 'Loading network…';
       }
       return;
     }
@@ -39,7 +41,7 @@ export async function initMcpApp(): Promise<void> {
     try {
       loadNetwork(source, true);
       if (!partial && args.evidence && typeof args.evidence === 'object') {
-        S.hardEvidence = new Map(Object.entries(args.evidence as Record<string, string>));
+        S.hardEvidence = new Map(Object.entries(args.evidence as Record<string, unknown>).map(([k, v]) => [k, String(v)]));
         for (const k of S.hardEvidence.keys()) S.observationEnabled.add(k);
         rerender();
       }

@@ -7,7 +7,11 @@
   // Static assets are served first (the web viewer at / and its files);
   // anything that does not match an asset (/mcp, /help) hits the Worker.
   "assets": {
-    "directory": "./dist/viewer"
+    "directory": "./dist/viewer",
+    // Also exposed to the Worker / Durable Objects as env.ASSETS so the MCP
+    // server can read the example networks (/examples/*, /bench/models/*)
+    // without inlining ~15 MB of models into the script.
+    "binding": "ASSETS"
   },
   "durable_objects": {
     "bindings": [
@@ -18,6 +22,6 @@
     { "tag": "v1", "new_sqlite_classes": ["NababMcpServerDO"] }
   ],
   "rules": [
-    { "type": "Text", "globs": ["**/*.html", "**/*.xmlbif"], "fallthrough": false }
+    { "type": "Text", "globs": ["**/*.html"], "fallthrough": false }
   ]
 }

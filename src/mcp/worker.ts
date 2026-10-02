@@ -1,134 +1,168 @@
 /**
  * Cloudflare Workers entry for the Nabab MCP server.
  *
- * Routes: /mcp (POST/GET/DELETE), / (landing page)
+ * Routes: /mcp (POST/DELETE), /help and / (help page, when no static asset matches)
  *
- * All MCP traffic is routed to a single Durable Object ("mcp"), which holds
- * the session transports and the command queue — isolate-independent, so
- * sessions and server→viewer commands survive Cloudflare's edge load
- * balancing (no Redis needed).
+ * Every MCP session is hosted by its own Durable Object (`idFromName(sessionId)`):
+ *   - `initialize` (no Mcp-Session-Id): this Worker mints the session id, routes
+ *     to that session's object and passes the id in the x-nabab-new-session
+ *     header; the object's transport uses it as the session id.
+ *   - later requests are routed by their Mcp-Session-Id header.
+ * See session-host.ts for what is persisted and how an evicted session resumes.
  *
  * Deploy: npm run deploy   (builds the viewer + MCP App, then wrangler deploy)
  */
-import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
-import { createServer, type McpAssets } from './server.js';
-import { createQueue, type CommandQueue } from './commands.js';
-// Bundled as text modules at build time (see "rules" in wrangler.jsonc).
+import { SessionHost, NEW_SESSION_HEADER, jsonRpcError, withCors, type KeyValueStorage } from './session-host.js';
+import { exampleAssetPath, findExample, EXAMPLES } from './examples.js';
+import type { McpAssets } from './networks.js';
+// Bundled as a text module at build time (see "rules" in wrangler.jsonc).
 import appHtml from '../../dist/mcp/index.html';
-import exampleXmlbif from '../example.xmlbif';
 
-// ─── Minimal Durable Object structural types ────────────────────────
+// ─── Minimal Cloudflare structural types ────────────────────────────
 // (avoids a hard dependency on @cloudflare/workers-types, whose globals
 // clash with the DOM lib used by the viewer in the same tsconfig)
 
 interface DurableObjectNamespaceLike {
-  idFromName(name: string): { name?: string };
-  get(id: { name?: string }): { fetch(input: RequestInfo, init?: RequestInit): Promise<Response> };
+  idFromName(name: string): unknown;
+  get(id: unknown): { fetch(request: Request): Promise<Response> };
+}
+
+interface AssetsBinding {
+  fetch(request: Request): Promise<Response>;
+}
+
+interface DurableObjectStateLike {
+  storage: KeyValueStorage;
 }
 
 interface Env {
   NB: DurableObjectNamespaceLike;
+  /** Static assets binding: the web viewer, /examples/* and /bench/*. */
+  ASSETS: AssetsBinding;
 }
+
+/**
+ * Exact-inference budget on Workers: a smaller clique than the library default
+ * (32M entries) keeps one request within the CPU and memory limits.
+ */
+const WORKER_MAX_CLIQUE_ENTRIES = 4_000_000;
 
 // ─── Assets ─────────────────────────────────────────────────────────
 
-const assets: McpAssets = {
-  listExamples: () => ['example.xmlbif'],
-  readExample: name => (/^example(\.xmlbif)?$/i.test(name) ? exampleXmlbif : null),
-  readMcpAppHtml: () => appHtml,
-  readFile: () => null, // no filesystem on Workers; file:// sources unsupported
-};
+/**
+ * Examples are NOT inlined in the bundle: the bnlearn models alone are ~15 MB.
+ * They are served by the static-assets binding (the same files the viewer
+ * fetches), keeping the Worker script small.
+ */
+function createWorkerAssets(binding: AssetsBinding): McpAssets {
+  return {
+    async readExample(name) {
+      const info = findExample(name);
+      if (!info) return null;
+      const resp = await binding.fetch(new Request(`https://assets.invalid${exampleAssetPath(info)}`));
+      if (!resp.ok) return null;
+      const text = await resp.text();
+      return /^\s*<!doctype html/i.test(text) ? null : text;
+    },
+    readMcpAppHtml: async () => appHtml,
+  };
+}
 
-// ─── Durable Object: MCP sessions + command queue ───────────────────
+// ─── Durable Object: one MCP session ────────────────────────────────
 
 export class NababMcpServerDO {
-  private readonly transports = new Map<string, WebStandardStreamableHTTPServerTransport>();
-  private queue: CommandQueue | null = null;
+  private readonly host: SessionHost;
 
-  async fetch(request: Request): Promise<Response> {
-    if (!this.queue) this.queue = createQueue();
-    return handleMcp(request, this.transports, this.queue);
+  constructor(state: DurableObjectStateLike, env: Env) {
+    this.host = new SessionHost({
+      storage: state.storage,
+      assets: createWorkerAssets(env.ASSETS),
+      limits: { maxCliqueEntries: WORKER_MAX_CLIQUE_ENTRIES },
+    });
+  }
+
+  fetch(request: Request): Promise<Response> {
+    return this.host.handle(request);
+  }
+
+  /** Session idle TTL elapsed: drop the session's storage. */
+  async alarm(): Promise<void> {
+    await this.host.expire();
   }
 }
 
-// ─── MCP streamable-HTTP handling ───────────────────────────────────
+// ─── Routing ────────────────────────────────────────────────────────
 
-const CORS_HEADERS: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, mcp-session-id, Accept',
-  'Access-Control-Expose-Headers': 'mcp-session-id',
-};
+const SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function jsonRpcError(status: number, code: number, message: string): Response {
-  return new Response(
-    JSON.stringify({ jsonrpc: '2.0', error: { code, message }, id: null }),
-    { status, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } },
-  );
-}
-
-async function handleMcp(
-  request: Request,
-  transports: Map<string, WebStandardStreamableHTTPServerTransport>,
-  queue: CommandQueue,
-): Promise<Response> {
-  if (request.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: CORS_HEADERS });
+async function routeMcp(request: Request, env: Env): Promise<Response> {
+  if (request.method === 'OPTIONS') return withCors(new Response(null, { status: 204 }));
+  if (request.method === 'GET') {
+    // No server-initiated notifications: there is no stream to listen to.
+    return withCors(new Response('This server does not offer an SSE stream; POST JSON-RPC to /mcp.', { status: 405, headers: { Allow: 'POST, DELETE, OPTIONS' } }));
   }
 
-  const sessionId = request.headers.get('mcp-session-id') ?? undefined;
+  const headers = new Headers(request.headers);
+  headers.delete(NEW_SESSION_HEADER); // never trust a client-supplied value
+  let sessionId = request.headers.get('mcp-session-id');
 
-  let transport = sessionId ? transports.get(sessionId) : undefined;
-  if (transport) {
-    return transport.handleRequest(request);
-  }
-
-  if (!sessionId && request.method === 'POST') {
+  if (sessionId) {
+    if (!SESSION_ID_RE.test(sessionId)) {
+      return jsonRpcError(404, -32001, `Session ${sessionId} not found. Send a new initialize request (without Mcp-Session-Id).`);
+    }
+  } else {
+    if (request.method !== 'POST') return jsonRpcError(400, -32000, 'Missing Mcp-Session-Id header.');
     let body: unknown;
     try {
-      body = await request.json();
+      body = await request.clone().json();
     } catch {
       return jsonRpcError(400, -32700, 'Invalid JSON body');
     }
-    if (isInitializeRequest(body)) {
-      transport = new WebStandardStreamableHTTPServerTransport({
-        sessionIdGenerator: () => crypto.randomUUID(),
-        onsessioninitialized: sid => { transports.set(sid, transport!); },
-      });
-      transport.onclose = () => {
-        const sid = transport!.sessionId;
-        if (sid) transports.delete(sid);
-      };
-      const server = createServer({ queue, assets });
-      await server.connect(transport);
-      return transport.handleRequest(request, { parsedBody: body });
+    if (!isInitializeRequest(body)) {
+      return jsonRpcError(400, -32000, 'Missing Mcp-Session-Id header and the body is not an initialize request.');
     }
+    sessionId = crypto.randomUUID();
+    headers.set(NEW_SESSION_HEADER, sessionId);
   }
 
-  const message = sessionId
-    ? `Session ${sessionId} not found (server restarted or session expired). Re-send initialize.`
-    : 'Missing Mcp-Session-Id header and body is not an initialize request.';
-  return jsonRpcError(sessionId ? 404 : 400, -32001, message);
+  const stub = env.NB.get(env.NB.idFromName(sessionId));
+  return stub.fetch(new Request(request, { headers }));
 }
 
 // ─── Help page ──────────────────────────────────────────────────────
 
 function helpPage(request: Request, status = 200): Response {
   const baseUrl = new URL(request.url).origin;
+  const nets = EXAMPLES.filter(e => e.kind === 'network').length;
   const html = `<!DOCTYPE html>
-<html><body style="font-family:system-ui,sans-serif;max-width:640px;margin:50px auto;padding:0 20px">
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nabab</title>
+<style>body{font-family:system-ui,sans-serif;max-width:720px;margin:40px auto;padding:0 20px;line-height:1.5}
+pre{background:#f4f4f4;padding:12px;border-radius:6px;white-space:pre-wrap}code{background:#f4f4f4;padding:1px 4px;border-radius:3px}
+dt{font-weight:600;margin-top:.6em}dd{margin:0 0 0 1em}</style></head><body>
 <h1>Nabab</h1>
-<p>Bayesian network inference engine with an interactive viewer.</p>
+<p>Bayesian network engine: model, query, explain and learn Bayesian networks, with an interactive viewer.</p>
 <h2>Web viewer</h2>
-<p><a href="${baseUrl}/">${baseUrl}/</a> — load examples, set evidence, drag-drop networks.</p>
+<p><a href="${baseUrl}/">${baseUrl}/</a> - load examples, set evidence, drag-drop networks.</p>
 <h2>MCP server</h2>
 <p>Streamable HTTP endpoint:</p>
-<pre style="background:#f4f4f4;padding:12px;border-radius:6px;white-space:pre-wrap">claude mcp add --transport http nabab ${baseUrl}/mcp</pre>
-<p>Or point any MCP client at <code>${baseUrl}/mcp</code>.</p>
+<pre>claude mcp add --transport http nabab ${baseUrl}/mcp</pre>
+<p>Or point any MCP client at <code>${baseUrl}/mcp</code>. Tools take a <code>network</code> (inline XMLBIF/BIF, an http(s) URL, one of ${nets} bundled example names, or a handle returned by an earlier call) and the full <code>evidence</code> on every call; there is no hidden evidence state.</p>
+<dl>
+<dt>build_network</dt><dd>Build a network from a JSON spec: explicit tables, conditional rules, noisy-OR, gated-logistic and temporal variables. Returns a handle.</dd>
+<dt>query</dt><dd>Posterior probabilities with change versus prior and P(evidence); renders the viewer. Exact, or sampling for big networks.</dd>
+<dt>explain</dt><dd>Most probable explanation, or the k best.</dd>
+<dt>what_to_observe</dt><dd>Value of information: which variable to observe next.</dd>
+<dt>sensitivity</dt><dd>Which CPT parameters matter most for a query.</dd>
+<dt>intervene</dt><dd>Causal do-operator and average causal effect.</dd>
+<dt>learn_from_csv</dt><dd>Learn structure and parameters from categorical CSV.</dd>
+<dt>describe_network</dt><dd>Structure, outcomes, CPTs and inference cost.</dd>
+<dt>export_network</dt><dd>XMLBIF or JSON.</dd>
+<dt>list_examples</dt><dd>Bundled networks (incl. bnlearn benchmarks) and datasets.</dd>
+</dl>
 <p>stdio transport (local):</p>
-<pre style="background:#f4f4f4;padding:12px;border-radius:6px">cd /path/to/nabab && npm run build:mcp && npm run mcp -- --stdio</pre>
-<p style="color:#888;font-size:0.9em">Sessions &amp; command queue: Durable Object &middot; Endpoint: <code>${baseUrl}/mcp</code></p>
+<pre>cd /path/to/nabab && npm run build:mcp && npm run mcp -- --stdio</pre>
+<p style="color:#666;font-size:.9em">Each MCP session runs in its own Durable Object; network handles are persisted so they survive eviction, and an evicted session resumes transparently for up to 24 hours of inactivity. Endpoint: <code>${baseUrl}/mcp</code></p>
 </body></html>`;
   return new Response(html, { status, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 }
@@ -140,10 +174,7 @@ function helpPage(request: Request, status = 200): Response {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const { pathname } = new URL(request.url);
-    if (pathname === '/mcp') {
-      const stub = env.NB.get(env.NB.idFromName('mcp'));
-      return stub.fetch(request);
-    }
+    if (pathname === '/mcp') return routeMcp(request, env);
     if (pathname === '/' || pathname === '/help') return helpPage(request);
     return helpPage(request, 404);
   },
