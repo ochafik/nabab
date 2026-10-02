@@ -7,7 +7,7 @@ import { parseCSV, learnStructure } from '../lib/structure-learning.js';
 import type { Variable, CPT } from '../lib/types.js';
 import { S, setNetwork, resetEvidenceState, type SerializedState } from './state.js';
 import { autoLayout, render, restoreZoom } from './graph-render.js';
-import { decompress } from './persistence.js';
+import { decompress, applySerializedEvidence } from './persistence.js';
 
 function exampleUrl(filename: string): string {
   if (filename.startsWith('bench/')) {
@@ -110,11 +110,7 @@ export async function loadStateFromHash(): Promise<boolean> {
     }
 
     // Restore evidence
-    S.hardEvidence = new Map(Object.entries(state.h ?? {}));
-    S.softEvidence = new Map(Object.entries(state.e ?? {}).map(([k, v]) => [k, new Map(Object.entries(v))]));
-    S.observationEnabled = new Set(state.o ?? []);
-    S.rememberedHard = new Map(); S.rememberedSoft = new Map(); S.tweakedOutcomes = new Map();
-    S.selectedNodes = new Set(state.sel ?? []);
+    applySerializedEvidence(state);
 
     // Restore node positions (or auto-layout if none saved)
     S.nodePositions = state.p ? new Map(Object.entries(state.p)) : new Map();
@@ -146,11 +142,7 @@ export function restoreSerializedState(state: SerializedState): boolean {
     const content = state.s.t === 'c' ? state.s.x : null;
     if (!content) return false;
     setNetwork(BayesianNetwork.parse(content));
-    S.hardEvidence = new Map(Object.entries(state.h ?? {}));
-    S.softEvidence = new Map(Object.entries(state.e ?? {}).map(([k, v]) => [k, new Map(Object.entries(v))]));
-    S.observationEnabled = new Set(state.o ?? []);
-    S.rememberedHard = new Map(); S.rememberedSoft = new Map(); S.tweakedOutcomes = new Map();
-    S.selectedNodes = new Set(state.sel ?? []);
+    applySerializedEvidence(state);
     S.nodePositions = state.p ? new Map(Object.entries(state.p)) : new Map();
     document.getElementById('network-name')!.textContent = S.network!.name;
     if (S.nodePositions.size === 0) autoLayout(); else render();

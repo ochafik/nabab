@@ -3,58 +3,61 @@
  * tweak tracking and the interactions that mutate them.
  */
 import type { Variable, Evidence, LikelihoodEvidence, Distribution } from '../lib/types.js';
-import { S } from './state.js';
+import { S, getActive, setIntervention } from './state.js';
 import { rerender } from './render-bus.js';
+import {
+  buildEffectiveEvidence, targetObs, sliderObs, multiWeightObs, hardObs, type VarObs,
+} from './evidence-model.js';
+
+/** Current observation state of a variable, as a pure value. */
+export function getObs(name: string): VarObs {
+  return {
+    enabled: S.observationEnabled.has(name),
+    hard: S.hardEvidence.get(name),
+    soft: S.softEvidence.get(name),
+    tweaked: new Set(S.tweakedOutcomes.get(name) ?? []),
+  };
+}
+
+/** Write an observation state back to the shared viewer state (no re-render). */
+function writeObs(name: string, obs: VarObs): void {
+  if (obs.enabled) S.observationEnabled.add(name); else S.observationEnabled.delete(name);
+  if (obs.hard !== undefined) S.hardEvidence.set(name, obs.hard); else S.hardEvidence.delete(name);
+  if (obs.soft) S.softEvidence.set(name, obs.soft); else S.softEvidence.delete(name);
+  S.tweakedOutcomes.set(name, obs.tweaked);
+}
+
+/** Observing a variable replaces any do() intervention on it. */
+function dropIntervention(name: string): void {
+  if (S.interventions.has(name)) setIntervention(name, null);
+}
 
 /**
- * Convert user-set target marginals to likelihood evidence via Jeffrey's rule.
- * User sets "I want P(X=ok)=0.19" but the engine needs likelihood weights.
- * Jeffrey's rule: likelihood(x) = target(x) / prior(x).
- * We compute priors once (no evidence), then divide.
+ * Convert user-set target marginals to likelihood evidence via Jeffrey's rule
+ * (likelihood(x) = target(x) / prior(x), priors computed once per active
+ * network). Interventions come back as hard evidence for the mutilated
+ * network. `override` substitutes one variable's observation (hover preview).
  */
-export function effectiveEvidence(): [Evidence | undefined, LikelihoodEvidence | undefined] {
-  if (!S.network) return [undefined, undefined];
-  const he = new Map<string, string>();
-  const se = new Map<string, Map<string, number>>();
-
-  // Drop stale entries (e.g. restored from a hash / postMessage for another
-  // network): the library rejects unknown variables and outcomes.
-  for (const [k, v] of S.hardEvidence) {
-    if (!S.observationEnabled.has(k)) continue;
-    if (S.network.getVariable(k)?.outcomes.includes(v)) he.set(k, v);
-  }
-
-  // For soft evidence, apply Jeffrey's rule: L(x) = target(x) / prior(x)
-  if (S.softEvidence.size > 0) {
-    // Compute priors once (cached until network changes)
-    if (!S.priorCache) {
-      const priorResult = S.network.infer();
-      S.priorCache = priorResult.posteriors;
-    }
-    for (const [k, targetWeights] of S.softEvidence) {
-      if (!S.observationEnabled.has(k)) continue;
-      const variable = S.network.getVariable(k);
-      if (!variable) continue;
-      if (![...targetWeights.keys()].every(o => variable.outcomes.includes(o))) continue;
-      if (![...targetWeights.values()].every(w => Number.isFinite(w) && w >= 0)) continue;
-      const prior = S.priorCache.get(variable);
-      if (!prior) { se.set(k, targetWeights); continue; }
-
-      // Jeffrey's rule: likelihood = target / prior
-      const likelihood = new Map<string, number>();
-      for (const [outcome, targetP] of targetWeights) {
-        const priorP = prior.get(outcome) ?? 0;
-        likelihood.set(outcome, priorP > 1e-10 ? targetP / priorP : targetP > 0 ? 1e6 : 0);
-      }
-      // An all-zero vector (every outcome excluded) is not valid evidence.
-      if (variable.outcomes.some(o => (likelihood.get(o) ?? 1) > 0)) se.set(k, likelihood);
-    }
-  }
-
-  return [he.size ? he : undefined, se.size ? se : undefined];
+export function effectiveEvidence(override?: { name: string; obs: VarObs }): [Evidence | undefined, LikelihoodEvidence | undefined] {
+  const net = S.network;
+  const active = getActive();
+  if (!net || !active) return [undefined, undefined];
+  return buildEffectiveEvidence({
+    hard: S.hardEvidence,
+    soft: S.softEvidence,
+    enabled: S.observationEnabled,
+    interventions: S.interventions,
+    getVariable: n => net.getVariable(n),
+    getPriors: (): Map<Variable, Distribution> => {
+      if (!S.priorCache) S.priorCache = active.engine.infer().posteriors;
+      return S.priorCache;
+    },
+    override,
+  });
 }
 
 export function toggleEye(v: Variable): void {
+  dropIntervention(v.name);
   if (S.observationEnabled.has(v.name)) {
     S.observationEnabled.delete(v.name);
     S.tweakedOutcomes.delete(v.name);
@@ -82,6 +85,7 @@ export function eyeTooltip(v: Variable): string {
 }
 
 export function cycleObservation(v: Variable): void {
+  dropIntervention(v.name);
   const cur = S.hardEvidence.get(v.name);
   if (!S.observationEnabled.has(v.name)) {
     S.observationEnabled.add(v.name);
@@ -105,15 +109,39 @@ export function cycleObservation(v: Variable): void {
 }
 
 export function setSlider(v: Variable, trueRatio: number): void {
-  S.hardEvidence.delete(v.name); S.observationEnabled.add(v.name);
-  const t = Math.max(0, Math.min(1, trueRatio));
-  if (t > 0.995) { S.hardEvidence.set(v.name, v.outcomes[0]); S.softEvidence.delete(v.name); }
-  else if (t < 0.005) { S.hardEvidence.set(v.name, v.outcomes[1]); S.softEvidence.delete(v.name); }
-  else S.softEvidence.set(v.name, new Map([[v.outcomes[0], t], [v.outcomes[1], 1 - t]]));
+  dropIntervention(v.name);
+  writeObs(v.name, sliderObs(v, trueRatio, getObs(v.name)));
+  rerender();
+}
+
+/** Commit "outcome `idx` at probability `target`" exactly as the hover preview showed it. */
+export function commitTarget(v: Variable, idx: number, target: number): void {
+  dropIntervention(v.name);
+  writeObs(v.name, targetObs(v, idx, target, getObs(v.name)));
+  rerender();
+}
+
+/** Observe `outcome` with certainty. */
+export function observeHard(v: Variable, outcome: string): void {
+  dropIntervention(v.name);
+  writeObs(v.name, hardObs(v, outcome));
+  rerender();
+}
+
+/** do(v = outcome); doing the same again clears it. Observations of v are removed. */
+export function toggleIntervention(v: Variable, outcome: string): void {
+  if (S.interventions.get(v.name) === outcome) {
+    setIntervention(v.name, null);
+  } else {
+    setIntervention(v.name, outcome);
+    S.hardEvidence.delete(v.name); S.softEvidence.delete(v.name);
+    S.observationEnabled.delete(v.name); S.tweakedOutcomes.delete(v.name);
+  }
   rerender();
 }
 
 export function cycleOutcome(v: Variable, i: number): void {
+  dropIntervention(v.name);
   const o = v.outcomes[i];
   if (!S.observationEnabled.has(v.name)) {
     // Not observed → set this outcome to 100%, only it is tweaked
@@ -150,46 +178,8 @@ export function getWeights(v: Variable, posteriors?: Map<Variable, Distribution>
 
 /** Set a single outcome's weight, rescale floating (non-tweaked) outcomes. */
 export function setMultiWeight(v: Variable, outcomeIdx: number, value: number): void {
-  const o = v.outcomes[outcomeIdx];
-  S.hardEvidence.delete(v.name);
-  S.observationEnabled.add(v.name);
-
-  // Init weights from current state if needed
-  const w = S.softEvidence.has(v.name) ? new Map(S.softEvidence.get(v.name)!) : getWeights(v);
-  if (!S.tweakedOutcomes.has(v.name)) S.tweakedOutcomes.set(v.name, new Set());
-  const tweaked = S.tweakedOutcomes.get(v.name)!;
-  tweaked.add(o);
-
-  // Set this outcome
-  w.set(o, value);
-
-  // Remaining budget for floating outcomes
-  let tweakedSum = 0;
-  for (const t of tweaked) tweakedSum += w.get(t) ?? 0;
-  const remaining = Math.max(0, 1 - tweakedSum);
-
-  // Distribute remaining among floating (non-tweaked) outcomes
-  const floating = v.outcomes.filter(x => !tweaked.has(x));
-  if (floating.length > 0) {
-    const floatSum = floating.reduce((s, x) => s + (w.get(x) ?? 0), 0);
-    for (const f of floating) {
-      w.set(f, floatSum > 0 ? (w.get(f) ?? 0) / floatSum * remaining : remaining / floating.length);
-    }
-  } else if (tweakedSum !== 1) {
-    // All tweaked but don't sum to 1 — scale all proportionally
-    for (const t of tweaked) w.set(t, (w.get(t) ?? 0) / tweakedSum);
-  }
-
-  // Snap to hard evidence if one is ~100%
-  for (const x of v.outcomes) {
-    if ((w.get(x) ?? 0) > 0.995) {
-      S.hardEvidence.set(v.name, x); S.softEvidence.delete(v.name);
-      S.tweakedOutcomes.set(v.name, new Set(v.outcomes));
-      rerender(); return;
-    }
-  }
-
-  S.softEvidence.set(v.name, w);
+  dropIntervention(v.name);
+  writeObs(v.name, multiWeightObs(v, outcomeIdx, value, getObs(v.name)));
   rerender();
 }
 

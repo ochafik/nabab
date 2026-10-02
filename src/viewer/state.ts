@@ -6,6 +6,7 @@
  */
 import { CachedInferenceEngine } from '../lib/cached-inference.js';
 import type { BayesianNetwork } from '../lib/network.js';
+import { mutilateNetwork } from '../lib/causal-inference.js';
 import type { Variable, Evidence, LikelihoodEvidence, Distribution } from '../lib/types.js';
 import type { AnalyticSensitivityResult } from '../lib/analytic-sensitivity.js';
 import type { VOIResult } from '../lib/voi.js';
@@ -22,6 +23,7 @@ export interface SerializedState {
   h?: Record<string, string>;                          // hard evidence
   e?: Record<string, Record<string, number>>;          // soft evidence
   o?: string[];                                        // enabled observations
+  d?: Record<string, string>;                          // interventions do(X=x)
   z?: { x: number; y: number; k: number };             // zoom transform (translateX, translateY, scale)
   p?: Record<string, { x: number; y: number }>;        // node positions (if manually moved)
   sel?: string[];                                       // selected nodes
@@ -39,6 +41,17 @@ export const S = {
   tweakedOutcomes: new Map<string, Set<string>>(),
   nodePositions: new Map<string, { x: number; y: number }>(),
   selectedNodes: new Set<string>(),
+
+  /** do(X=x) interventions: variable name -> forced outcome. */
+  interventions: new Map<string, string>(),
+  /** Hover what-if preview enabled (toolbar toggle). */
+  previewEnabled: true,
+  /** Posteriors of the last render, by variable name (baseline for preview deltas). */
+  lastPosteriors: new Map<string, Distribution>() as Map<string, Distribution>,
+  /** Wall time of the last full inference in render(), ms. */
+  lastInferMs: 0,
+  /** Probability of the evidence from the last render (undefined without evidence). */
+  lastProbabilityOfEvidence: undefined as number | undefined,
 
   // Sensitivity analysis state
   sensitivityMode: false,
@@ -61,6 +74,9 @@ export function resetEvidenceState(): void {
   S.observationEnabled = new Set();
   S.rememberedHard = new Map();
   S.rememberedSoft = new Map();
+  S.tweakedOutcomes = new Map();
+  S.interventions = new Map();
+  S.priorCache = null;
 }
 
 /** Replace the active network and derived caches. */
@@ -68,4 +84,39 @@ export function setNetwork(net: BayesianNetwork): void {
   S.network = net;
   S.cachedEngine = new CachedInferenceEngine(net);
   S.priorCache = null; // reset Jeffrey's rule prior cache
+  S.interventions = new Map();
+  _active = null;
+}
+
+// ─── Active (possibly mutilated) network ─────────────────────────────
+
+let _active: { key: string; net: BayesianNetwork; engine: CachedInferenceEngine } | null = null;
+
+/** Canonical key of the current interventions ('' when none). */
+export function interventionKey(m: ReadonlyMap<string, string> = S.interventions): string {
+  return [...m].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([k, v]) => `${k}=${v}`).join(',');
+}
+
+/**
+ * The network inference should run on: the loaded one, or its mutilated
+ * version under the current do() interventions (graph surgery). Engines are
+ * cached per intervention set; the Jeffrey prior cache follows the active
+ * network.
+ */
+export function getActive(): { key: string; net: BayesianNetwork; engine: CachedInferenceEngine } | null {
+  if (!S.network || !S.cachedEngine) return null;
+  const key = interventionKey();
+  if (key === '') return { key, net: S.network, engine: S.cachedEngine };
+  if (_active && _active.key === key) return _active;
+  const net = mutilateNetwork(S.network, [...S.interventions].map(([variable, value]) => ({ variable, value })));
+  _active = { key, net, engine: new CachedInferenceEngine(net) };
+  S.priorCache = null;
+  return _active;
+}
+
+/** Set / clear an intervention and invalidate derived caches. */
+export function setIntervention(name: string, outcome: string | null): void {
+  if (outcome === null) S.interventions.delete(name);
+  else S.interventions.set(name, outcome);
+  S.priorCache = null;
 }

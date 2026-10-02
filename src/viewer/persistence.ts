@@ -21,7 +21,7 @@ async function decompress(b64: string): Promise<string> {
 
 export { decompress };
 
-function buildSerializedState(): SerializedState {
+export function buildSerializedState(): SerializedState {
   const state: SerializedState = {
     s: S.currentSource.type === 'builtin' ? { t: 'b', n: S.currentSource.name } : { t: 'c', x: S.currentSource.xmlbif },
   };
@@ -36,12 +36,26 @@ function buildSerializedState(): SerializedState {
     if (Object.keys(state.e).length === 0) delete state.e;
   }
   if (S.observationEnabled.size > 0) state.o = [...S.observationEnabled];
+  if (S.interventions.size > 0) state.d = Object.fromEntries(S.interventions);
   if (S.nodePositions.size > 0) {
     state.p = {};
     for (const [k, v] of S.nodePositions) state.p[k] = { x: Math.round(v.x), y: Math.round(v.y) };
   }
   if (S.selectedNodes.size > 0) state.sel = [...S.selectedNodes];
   return state;
+}
+
+/** Restore evidence, interventions and selection from a serialized state (inverse of buildSerializedState). */
+export function applySerializedEvidence(state: SerializedState): void {
+  S.hardEvidence = new Map(Object.entries(state.h ?? {}));
+  S.softEvidence = new Map(Object.entries(state.e ?? {}).map(([k, v]) => [k, new Map(Object.entries(v))]));
+  S.observationEnabled = new Set(state.o ?? []);
+  // Drop interventions that don't fit the loaded network (stale hash).
+  S.interventions = new Map(Object.entries(state.d ?? {}).filter(([k, x]) =>
+    !S.network || S.network.getVariable(k)?.outcomes.includes(x)));
+  S.priorCache = null;
+  S.rememberedHard = new Map(); S.rememberedSoft = new Map(); S.tweakedOutcomes = new Map();
+  S.selectedNodes = new Set(state.sel ?? []);
 }
 
 let hashWriteTimeout: ReturnType<typeof setTimeout> | null = null;
