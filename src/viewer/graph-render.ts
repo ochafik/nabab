@@ -20,6 +20,9 @@ import { resetPreviewAfterRender } from './preview.js';
 import { refreshExplain, reapplyExplain } from './explain.js';
 import { selectNode, clearSelection } from './selection.js';
 import { renderInfoPanel } from './info-panel.js';
+import { boundsOf, computeFit, MIN_ZOOM, MAX_ZOOM, type Fit } from './fit-view.js';
+import { describeInferenceFailure } from './inference-status.js';
+import { DEFAULT_MAX_CLIQUE_ENTRIES } from '../lib/inference.js';
 import { saveStateToHash, saveStateToLocalStorage } from './persistence.js';
 
 const ARR_LEN = 7; // rendered arrowhead length in px
@@ -116,30 +119,28 @@ export function restoreZoom(z: { x: number; y: number; k: number }): void {
   _svg.call(_zoomBehavior.transform, t);
 }
 
-export function fitView(): void {
-  if (!S.network || !_zoomBehavior || !_svg) return;
-  const container = document.getElementById('graph-container')!;
-  const W = container.clientWidth, H = container.clientHeight;
-  if (S.nodePositions.size === 0) return;
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const v of S.network.variables) {
+/** Fit transform for the current layout, or null when there is nothing to fit. */
+function currentFit(W: number, H: number): Fit | null {
+  if (!S.network || S.nodePositions.size === 0) return null;
+  const box = boundsOf(S.network.variables.flatMap(v => {
     const p = S.nodePositions.get(v.name);
-    if (!p) continue;
-    const h = nodeH(v);
-    const w = nodeW(v);
-    minX = Math.min(minX, p.x - w / 2);
-    maxX = Math.max(maxX, p.x + w / 2);
-    minY = Math.min(minY, p.y - h / 2);
-    maxY = Math.max(maxY, p.y + h / 2);
-  }
-  const pad = 30;
-  const bw = maxX - minX + pad * 2, bh = maxY - minY + pad * 2;
-  const scale = Math.min(W / bw, H / bh, 2);
-  const tx = W / 2 - (minX + maxX) / 2 * scale;
-  const ty = H / 2 - (minY + maxY) / 2 * scale;
-  _svg.transition().duration(300).call(
-    _zoomBehavior.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+    return p ? [{ x: p.x, y: p.y, w: nodeW(v), h: nodeH(v) }] : [];
+  }));
+  return box ? computeFit(box, W, H) : null;
 }
+
+export function fitView(): void {
+  if (!_zoomBehavior || !_svg) return;
+  const container = document.getElementById('graph-container')!;
+  const f = currentFit(container.clientWidth, container.clientHeight);
+  if (!f) return;
+  _svg.transition().duration(300).call(
+    _zoomBehavior.transform, d3.zoomIdentity.translate(f.x, f.y).scale(f.k));
+}
+
+let _fitPending = false;
+/** Fit the view to the graph on the next render (call on fresh network loads only). */
+export function requestFit(): void { _fitPending = true; }
 
 export function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Distribution>): void {
   const container = document.getElementById('graph-container')!;
@@ -181,7 +182,7 @@ export function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Dist
   // Zoomable/pannable content group
   const contentG = svg.append('g');
   _zoomBehavior = d3.zoom<SVGSVGElement, unknown>()
-    .scaleExtent([0.1, 4])
+    .scaleExtent([MIN_ZOOM, MAX_ZOOM])
     // Only ctrl/cmd+wheel starts a wheel *zoom* gesture (that is also how
     // browsers report trackpad pinch). Plain wheel pans, handled below.
     // Drag and touch gestures keep d3-zoom's default filter.
@@ -197,7 +198,12 @@ export function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Dist
   });
   svg.on('click', (ev) => { if (ev.target === svg.node()) clearSelection(); });
   // Restore previous zoom transform
-  if (_savedTransform !== d3.zoomIdentity) {
+  const fit = _fitPending ? currentFit(W, H) : null;
+  if (fit) {
+    // Fresh network: fit it (ignore the previous network's pan/zoom).
+    _fitPending = false;
+    svg.call(_zoomBehavior.transform, d3.zoomIdentity.translate(fit.x, fit.y).scale(fit.k));
+  } else if (_savedTransform !== d3.zoomIdentity) {
     svg.call(_zoomBehavior.transform, _savedTransform);
   }
 
@@ -744,30 +750,43 @@ function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Va
 export function render(): void {
   const active = getActive();
   if (!S.network || !active) return;
-  const [he, se] = effectiveEvidence();
-  let result;
+  let he: ReturnType<typeof effectiveEvidence>[0], se: ReturnType<typeof effectiveEvidence>[1];
+  let result: { posteriors: Map<Variable, Distribution>; probabilityOfEvidence: number };
   const nameEl = document.getElementById('network-name');
   const t0 = performance.now();
   try {
+    [he, se] = effectiveEvidence();
     result = active.engine.infer(he, se);
     S.lastInferMs = performance.now() - t0;
+    S.inferenceError = null;
     if (nameEl && nameEl.dataset.conflict) { nameEl.textContent = S.network.name; delete nameEl.dataset.conflict; }
     // do() evidence is structural (probability 1 in the mutilated network): only observations count.
     const observed = se !== undefined || [...(he ?? [])].some(([k]) => !S.interventions.has(k));
     S.lastProbabilityOfEvidence = observed ? result.probabilityOfEvidence : undefined;
   } catch (e) {
-    if (!(e instanceof ImpossibleEvidenceError)) throw e;
-    // Contradictory observations: keep the UI alive on the priors and say why.
-    result = active.engine.infer();
-    S.lastProbabilityOfEvidence = 0;
-    if (nameEl) { nameEl.textContent = 'Impossible evidence: observations contradict each other'; nameEl.dataset.conflict = '1'; }
+    if (e instanceof ImpossibleEvidenceError) {
+      // Contradictory observations: keep the UI alive on the priors and say why.
+      result = active.engine.infer();
+      S.lastProbabilityOfEvidence = 0;
+      if (nameEl) { nameEl.textContent = 'Impossible evidence: observations contradict each other'; nameEl.dataset.conflict = '1'; }
+    } else {
+      // Exact inference infeasible (clique budget exceeded) or failed: show the structure, say why.
+      let cost = null;
+      try { cost = active.net.estimateInferenceCost(); } catch { /* keep fallback message */ }
+      S.inferenceError = describeInferenceFailure(cost, DEFAULT_MAX_CLIQUE_ENTRIES, e instanceof Error ? e.message.split('\n')[0] : String(e));
+      console.warn(S.inferenceError, e);
+      result = { posteriors: new Map(), probabilityOfEvidence: 1 };
+      S.lastProbabilityOfEvidence = undefined;
+      he = undefined; se = undefined;
+      if (nameEl) { nameEl.textContent = S.inferenceError; nameEl.dataset.conflict = '1'; }
+    }
   }
   S.lastPosteriors = new Map();
   for (const [v, d] of result.posteriors) S.lastPosteriors.set(v.name, d);
   updateEvidenceBadge();
 
   // Sensitivity heat-map: only when mode is active and a query is selected
-  if (S.sensitivityMode && S.sensitivityQuery && S.network.getVariable(S.sensitivityQuery)) {
+  if (!S.inferenceError && S.sensitivityMode && S.sensitivityQuery && S.network.getVariable(S.sensitivityQuery)) {
     const qVar = S.network.getVariable(S.sensitivityQuery)!;
     const qOutcome = qVar.outcomes[0];
     try {
@@ -787,7 +806,7 @@ export function render(): void {
   // "what else could I observe to learn more about these variables?")
   // Memoised on (network, interventions, evidence, selection): re-renders
   // that change none of these (zoom, drag, preview resets) don't recompute.
-  if (S.selectedNodes.size > 0) {
+  if (S.selectedNodes.size > 0 && !S.inferenceError) {
     const voiKey = `${active.key}|${evidenceKey(he, se)}|${[...S.selectedNodes].sort().join(',')}`;
     if (_voiMemo && _voiMemo.net === active.net && _voiMemo.key === voiKey) {
       S.voiResults = _voiMemo.results;
@@ -840,7 +859,8 @@ function updateEvidenceBadge(): void {
 export function autoLayout(): void {
   if (!S.network) return;
   const g = new dagre.graphlib.Graph();
-  g.setGraph({ rankdir: 'TB', nodesep: 50, ranksep: 70, marginx: 30, marginy: 30 });
+  // network-simplex ranking is superlinear (14 s on link, 724 nodes); tight-tree gives the same layout ~25x faster.
+  g.setGraph({ rankdir: 'TB', nodesep: 50, ranksep: 70, marginx: 30, marginy: 30, ranker: S.network.variables.length > 150 ? 'tight-tree' : 'network-simplex' });
   g.setDefaultEdgeLabel(() => ({}));
   for (const v of S.network.variables) g.setNode(v.name, { width: nodeW(v), height: nodeH(v) });
   for (const cpt of S.network.cpts)

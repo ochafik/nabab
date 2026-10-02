@@ -6,7 +6,7 @@ import { BayesianNetwork } from '../lib/network.js';
 import { parseCSV, learnStructure } from '../lib/structure-learning.js';
 import type { Variable, CPT } from '../lib/types.js';
 import { S, setNetwork, resetEvidenceState, type SerializedState } from './state.js';
-import { autoLayout, render, restoreZoom } from './graph-render.js';
+import { autoLayout, render, restoreZoom, requestFit } from './graph-render.js';
 import { decompress, applySerializedEvidence } from './persistence.js';
 
 function exampleUrl(filename: string): string {
@@ -35,6 +35,7 @@ export async function loadExampleFile(filename: string): Promise<void> {
     S.nodePositions = new Map();
     S.currentSource = { type: 'builtin', name: filename };
     statusEl.textContent = S.network!.name;
+    requestFit();
     autoLayout();
   } else {
     S.currentSource = { type: 'builtin', name: filename };
@@ -53,6 +54,7 @@ export function loadNetwork(content: string, isCustom = true): void {
   S.nodePositions = new Map();
   if (isCustom) S.currentSource = { type: 'custom', xmlbif: content };
   document.getElementById('network-name')!.textContent = S.network!.name;
+  requestFit();
   autoLayout();
 }
 
@@ -67,6 +69,7 @@ export function learnNetworkFromCsv(content: string): void {
   S.nodePositions = new Map();
   S.currentSource = { type: 'custom', xmlbif: parsedNetworkToXmlBif(parsed) };
   statusEl.textContent = S.network!.name;
+  requestFit();
 }
 
 /** Serialize a ParsedNetwork to minimal XMLBIF for hash persistence. */
@@ -116,6 +119,7 @@ export async function loadStateFromHash(): Promise<boolean> {
     S.nodePositions = state.p ? new Map(Object.entries(state.p)) : new Map();
 
     document.getElementById('network-name')!.textContent = S.network!.name;
+    if (!state.z) requestFit();
     if (S.nodePositions.size === 0) autoLayout();
     else render();
 
@@ -145,6 +149,7 @@ export function restoreSerializedState(state: SerializedState): boolean {
     applySerializedEvidence(state);
     S.nodePositions = state.p ? new Map(Object.entries(state.p)) : new Map();
     document.getElementById('network-name')!.textContent = S.network!.name;
+    requestFit();
     if (S.nodePositions.size === 0) autoLayout(); else render();
     return true;
   } catch {

@@ -54,7 +54,7 @@ let longPress: { timer: ReturnType<typeof setTimeout> | null; x: number; y: numb
 
 function context(): string {
   const a = getActive();
-  if (!a || !S.network) return '';
+  if (!a || !S.network || S.inferenceError) return '';
   let id = netIds.get(S.network);
   if (!id) { id = nextNetId++; netIds.set(S.network, id); }
   return `${id}|${a.key}`;

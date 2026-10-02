@@ -48,6 +48,8 @@ export const S = {
   previewEnabled: true,
   /** Posteriors of the last render, by variable name (baseline for preview deltas). */
   lastPosteriors: new Map<string, Distribution>() as Map<string, Distribution>,
+  /** Set when exact inference is infeasible for the current network (structure-only view). */
+  inferenceError: null as string | null,
   /** Wall time of the last full inference in render(), ms. */
   lastInferMs: 0,
   /** Probability of the evidence from the last render (undefined without evidence). */
