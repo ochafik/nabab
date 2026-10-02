@@ -15,6 +15,7 @@
  *    d. Add the resulting factor back to the pool
  * 4. Multiply all remaining factors and normalize
  */
+import { validateEvidence, ImpossibleEvidenceError } from './evidence.js';
 import type { Variable, CPT, Evidence, LikelihoodEvidence, Distribution } from './types.js';
 import {
   type Factor,
@@ -132,6 +133,8 @@ export function variableElimination(
   likelihoodEvidence?: LikelihoodEvidence,
   eliminationOrder?: Variable[],
 ): Distribution {
+  validateEvidence(variables, evidence, likelihoodEvidence);
+
   // Step 1: Convert CPTs to factors, applying evidence
   const factors: Factor[] = [];
 
@@ -152,17 +155,16 @@ export function variableElimination(
     }
 
     // Apply soft/likelihood evidence
-    if (likelihoodEvidence) {
-      for (const v of factor.variables) {
-        if (likelihoodEvidence.has(v.name)) {
-          const weights = likelihoodEvidence.get(v.name)!;
-          const weightArray = new Float64Array(v.outcomes.length);
-          for (let i = 0; i < v.outcomes.length; i++) {
-            weightArray[i] = weights.get(v.outcomes[i]) ?? 1;
-          }
-          factor = applyLikelihood(factor, v, weightArray);
-        }
+    // (only on the variable's own CPT: likelihoods are multiplicative, so
+    // applying them to every factor mentioning the variable would double-count)
+    if (likelihoodEvidence?.has(cpt.variable.name)) {
+      const v = cpt.variable;
+      const weights = likelihoodEvidence.get(v.name)!;
+      const weightArray = new Float64Array(v.outcomes.length);
+      for (let i = 0; i < v.outcomes.length; i++) {
+        weightArray[i] = weights.get(v.outcomes[i]) ?? 1;
       }
+      factor = applyLikelihood(factor, v, weightArray);
     }
 
     factors.push(factor);
@@ -238,6 +240,11 @@ export function variableElimination(
   for (let i = 1; i < factorPool.length; i++) {
     result = multiplyFactors(result, factorPool[i]);
   }
+
+  // Impossible evidence: every entry was zeroed out
+  let total = 0;
+  for (let i = 0; i < result.values.length; i++) total += result.values[i];
+  if (!(total > 0)) throw new ImpossibleEvidenceError();
 
   // Extract the distribution for the query variable
   return extractDistribution(result, queryVariable);

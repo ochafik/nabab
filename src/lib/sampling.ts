@@ -14,6 +14,7 @@
  * This keeps per-variable statistics (marginals, mutual information) cache
  * friendly and compact (1 byte per cell when a variable has ≤ 256 outcomes).
  */
+import { validateEvidence } from './evidence.js';
 import type { Variable, CPT, Evidence, LikelihoodEvidence, Distribution } from './types.js';
 
 export interface SamplingOptions {
@@ -188,6 +189,7 @@ function runSampler(
   likelihoodEvidence?: LikelihoodEvidence,
 ): SampleResult {
   if (!Number.isInteger(n) || n < 0) throw new Error(`Sample count must be a non-negative integer, got ${n}`);
+  validateEvidence(variables, evidence, likelihoodEvidence);
   const rng = makeRng(opts);
   const order = topologicalOrder(variables, cpts);
   const plans = buildPlans(order, cpts, evidence, likelihoodEvidence);

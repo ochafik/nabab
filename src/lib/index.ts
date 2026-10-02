@@ -37,6 +37,7 @@ export {
   estimateJunctionTreeCost,
 } from './graph.js';
 export type { InferenceResult, InferOptions } from './inference.js';
+export { validateEvidence, ImpossibleEvidenceError } from './evidence.js';
 export { infer, estimateInferenceCost, DEFAULT_MAX_CLIQUE_ENTRIES } from './inference.js';
 export type { ParsedNetwork } from './xmlbif-parser.js';
 export { parseXmlBif } from './xmlbif-parser.js';

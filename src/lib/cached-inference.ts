@@ -9,13 +9,12 @@
  * cache. When evidence is present, only the affected cliques are rebuilt.
  */
 import type { Variable, CPT, Evidence, LikelihoodEvidence } from './types.js';
-import type { InferenceResult } from './inference.js';
+import { type InferenceResult, propagate } from './inference.js';
+import { validateEvidence } from './evidence.js';
 import {
   type Factor,
   cptToFactor,
   multiplyFactors,
-  marginalize,
-  invertFactor,
   normalizeFactor,
   constantFactor,
   applyEvidence,
@@ -23,83 +22,8 @@ import {
   extractDistribution,
   createFactor,
 } from './factor.js';
-import { type JunctionTree, type Clique, buildJunctionTree, buildDirectedGraph } from './graph.js';
+import { type JunctionTree, buildJunctionTree, buildDirectedGraph } from './graph.js';
 import { BayesianNetwork } from './network.js';
-
-// ─── Helpers (mirrored from inference.ts to avoid modifying it) ──────
-
-function sepKey(i: number, j: number): string {
-  return i < j ? `${i},${j}` : `${j},${i}`;
-}
-
-function passMessage(
-  iSource: number,
-  iDest: number,
-  cliques: readonly Clique[],
-  cliquePotentials: Map<number, Factor>,
-  separatorPotentials: Map<string, Factor>,
-): void {
-  const key = sepKey(iSource, iDest);
-  const oldSepPotential = separatorPotentials.get(key);
-
-  const destNodes = new Set(cliques[iDest]);
-  const varsToMarginalize = cliques[iSource].filter(v => !destNodes.has(v));
-
-  const sourcePotential = cliquePotentials.get(iSource)!;
-  const newSepPotential = marginalize(sourcePotential, varsToMarginalize);
-
-  separatorPotentials.set(key, newSepPotential);
-
-  const oldDestPotential = cliquePotentials.get(iDest)!;
-
-  const ratio = oldSepPotential
-    ? multiplyFactors(newSepPotential, invertFactor(oldSepPotential))
-    : newSepPotential;
-
-  const newDestPotential = multiplyFactors(oldDestPotential, ratio);
-  cliquePotentials.set(iDest, newDestPotential);
-}
-
-function collectEvidence(
-  iSource: number,
-  iCaller: number,
-  marked: boolean[],
-  cliques: readonly Clique[],
-  neighbors: Map<number, Set<number>>,
-  cliquePotentials: Map<number, Factor>,
-  separatorPotentials: Map<string, Factor>,
-): void {
-  marked[iSource] = true;
-  for (const iNeighbor of neighbors.get(iSource)!) {
-    if (!marked[iNeighbor]) {
-      collectEvidence(iNeighbor, iSource, marked, cliques, neighbors, cliquePotentials, separatorPotentials);
-    }
-  }
-  if (iCaller >= 0) {
-    passMessage(iSource, iCaller, cliques, cliquePotentials, separatorPotentials);
-  }
-}
-
-function distributeEvidence(
-  iSource: number,
-  marked: boolean[],
-  cliques: readonly Clique[],
-  neighbors: Map<number, Set<number>>,
-  cliquePotentials: Map<number, Factor>,
-  separatorPotentials: Map<string, Factor>,
-): void {
-  marked[iSource] = true;
-  for (const iNeighbor of neighbors.get(iSource)!) {
-    if (!marked[iNeighbor]) {
-      passMessage(iSource, iNeighbor, cliques, cliquePotentials, separatorPotentials);
-    }
-  }
-  for (const iNeighbor of neighbors.get(iSource)!) {
-    if (!marked[iNeighbor]) {
-      distributeEvidence(iNeighbor, marked, cliques, neighbors, cliquePotentials, separatorPotentials);
-    }
-  }
-}
 
 // ─── Deep clone for factors ──────────────────────────────────────────
 
@@ -231,31 +155,17 @@ export class CachedInferenceEngine {
 
     const junctionTree = this._junctionTree!;
     const variables = this._network.variables;
+    validateEvidence(variables, evidence, likelihoodEvidence);
 
     if (junctionTree.cliques.length === 0) {
-      return { posteriors: new Map(), junctionTree, cliquePotentials: new Map() };
+      return { posteriors: new Map(), junctionTree, cliquePotentials: new Map(), probabilityOfEvidence: 1 };
     }
 
     // Build clique potentials for this query
     const cliquePotentials = this._buildCliquePotentials(evidence, likelihoodEvidence);
 
     // ── Global propagation ──
-    const separatorPotentials = new Map<string, Factor>();
-    const startClique = junctionTree.cliques.length - 1;
-
-    const marked1 = new Array(junctionTree.cliques.length).fill(false);
-    collectEvidence(
-      startClique, -1, marked1,
-      junctionTree.cliques, junctionTree.neighbors,
-      cliquePotentials, separatorPotentials,
-    );
-
-    const marked2 = new Array(junctionTree.cliques.length).fill(false);
-    distributeEvidence(
-      startClique, marked2,
-      junctionTree.cliques, junctionTree.neighbors,
-      cliquePotentials, separatorPotentials,
-    );
+    const probabilityOfEvidence = propagate(junctionTree, cliquePotentials);
 
     // Normalize
     for (const [i, potential] of cliquePotentials) {
@@ -273,7 +183,7 @@ export class CachedInferenceEngine {
       }
     }
 
-    return { posteriors, junctionTree, cliquePotentials };
+    return { posteriors, junctionTree, cliquePotentials, probabilityOfEvidence };
   }
 
   /**

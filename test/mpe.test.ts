@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { BayesianNetwork } from '../src/lib/network.js';
+import { ImpossibleEvidenceError } from '../src/lib/evidence.js';
 import { mostProbableExplanation, kBestExplanations } from '../src/lib/mpe.js';
 import type { Variable, CPT, Evidence, LikelihoodEvidence } from '../src/lib/types.js';
 import { enumerateJoint, randomNetwork, type JointEntry } from './brute-force.js';
@@ -69,15 +70,15 @@ describe('mostProbableExplanation', () => {
     expect(Math.exp(mpe.logProbability)).toBeCloseTo(best.weight, 12);
   });
 
-  it('returns -Infinity for impossible evidence', () => {
+  it('throws ImpossibleEvidenceError for impossible evidence', () => {
     const A: Variable = { name: 'A', outcomes: ['T', 'F'] };
     const B: Variable = { name: 'B', outcomes: ['T', 'F'] };
     const cpts: CPT[] = [
       { variable: A, parents: [], table: new Float64Array([0.5, 0.5]) },
       { variable: B, parents: [A], table: new Float64Array([1, 0, 0, 1]) },
     ];
-    const mpe = mostProbableExplanation([A, B], cpts, new Map([['A', 'T'], ['B', 'F']]));
-    expect(mpe.logProbability).toBe(-Infinity);
+    expect(() => mostProbableExplanation([A, B], cpts, new Map([['A', 'T'], ['B', 'F']])))
+      .toThrow(ImpossibleEvidenceError);
   });
 
   it('handles a variable without a CPT (assigned arbitrarily, probability unaffected)', () => {

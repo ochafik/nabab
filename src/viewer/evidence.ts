@@ -17,7 +17,12 @@ export function effectiveEvidence(): [Evidence | undefined, LikelihoodEvidence |
   const he = new Map<string, string>();
   const se = new Map<string, Map<string, number>>();
 
-  for (const [k, v] of S.hardEvidence) if (S.observationEnabled.has(k)) he.set(k, v);
+  // Drop stale entries (e.g. restored from a hash / postMessage for another
+  // network): the library rejects unknown variables and outcomes.
+  for (const [k, v] of S.hardEvidence) {
+    if (!S.observationEnabled.has(k)) continue;
+    if (S.network.getVariable(k)?.outcomes.includes(v)) he.set(k, v);
+  }
 
   // For soft evidence, apply Jeffrey's rule: L(x) = target(x) / prior(x)
   if (S.softEvidence.size > 0) {
@@ -30,6 +35,8 @@ export function effectiveEvidence(): [Evidence | undefined, LikelihoodEvidence |
       if (!S.observationEnabled.has(k)) continue;
       const variable = S.network.getVariable(k);
       if (!variable) continue;
+      if (![...targetWeights.keys()].every(o => variable.outcomes.includes(o))) continue;
+      if (![...targetWeights.values()].every(w => Number.isFinite(w) && w >= 0)) continue;
       const prior = S.priorCache.get(variable);
       if (!prior) { se.set(k, targetWeights); continue; }
 
@@ -39,7 +46,8 @@ export function effectiveEvidence(): [Evidence | undefined, LikelihoodEvidence |
         const priorP = prior.get(outcome) ?? 0;
         likelihood.set(outcome, priorP > 1e-10 ? targetP / priorP : targetP > 0 ? 1e6 : 0);
       }
-      se.set(k, likelihood);
+      // An all-zero vector (every outcome excluded) is not valid evidence.
+      if (variable.outcomes.some(o => (likelihood.get(o) ?? 1) > 0)) se.set(k, likelihood);
     }
   }
 

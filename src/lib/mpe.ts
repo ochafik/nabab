@@ -15,6 +15,7 @@
  * Sub-problem solutions sit in a priority queue; popping the best yields the
  * next explanation, which is split again.
  */
+import { validateEvidence, ImpossibleEvidenceError } from './evidence.js';
 import type { Variable, CPT, Evidence, LikelihoodEvidence } from './types.js';
 import { type Factor, createFactor, tableSize } from './factor.js';
 import { minFillOrder } from './variable-elimination.js';
@@ -164,7 +165,8 @@ function buildLogFactors(
         logW[idx] = 0;
         f = addLogWeights(f, v, logW);
       }
-      const lw = likelihoodEvidence?.get(v.name);
+      // Likelihoods are multiplicative: apply only on the variable's own CPT.
+      const lw = v === cpt.variable ? likelihoodEvidence?.get(v.name) : undefined;
       if (lw) {
         const logW = new Float64Array(v.outcomes.length);
         for (let i = 0; i < logW.length; i++) logW[i] = Math.log(lw.get(v.outcomes[i]) ?? 1);
@@ -243,6 +245,7 @@ function toExplanation(variables: readonly Variable[], r: MaxProductResult): Exp
 
 /**
  * Most probable full assignment given evidence (max-product VE).
+ * Throws `ImpossibleEvidenceError` if the evidence has probability zero.
  */
 export function mostProbableExplanation(
   variables: readonly Variable[],
@@ -250,9 +253,12 @@ export function mostProbableExplanation(
   evidence?: Evidence,
   likelihoodEvidence?: LikelihoodEvidence,
 ): Explanation {
+  validateEvidence(variables, evidence, likelihoodEvidence);
   const order = minFillOrder(variables, cpts);
   const factors = buildLogFactors(cpts, evidence, likelihoodEvidence);
-  return toExplanation(variables, runMaxProduct(variables, factors, order));
+  const result = runMaxProduct(variables, factors, order);
+  if (result.logProbability === -Infinity) throw new ImpossibleEvidenceError();
+  return toExplanation(variables, result);
 }
 
 interface Constraints {
@@ -314,6 +320,7 @@ export function kBestExplanations(
   likelihoodEvidence?: LikelihoodEvidence,
 ): Explanation[] {
   if (k <= 0) return [];
+  validateEvidence(variables, evidence, likelihoodEvidence);
   const order = minFillOrder(variables, cpts);
   const base = buildLogFactors(cpts, evidence, likelihoodEvidence);
 

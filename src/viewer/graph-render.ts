@@ -4,6 +4,7 @@
  */
 import * as d3 from 'd3';
 import dagre from '@dagrejs/dagre';
+import { ImpossibleEvidenceError } from '../lib/evidence.js';
 import { analyticSensitivity, variableInfluenceMap } from '../lib/analytic-sensitivity.js';
 import { multiQueryVOI } from '../lib/voi.js';
 import type { Variable, Distribution } from '../lib/types.js';
@@ -706,7 +707,17 @@ function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Va
 export function render(): void {
   if (!S.network || !S.cachedEngine) return;
   const [he, se] = effectiveEvidence();
-  const result = S.cachedEngine.infer(he, se);
+  let result;
+  const nameEl = document.getElementById('network-name');
+  try {
+    result = S.cachedEngine.infer(he, se);
+    if (nameEl && nameEl.dataset.conflict) { nameEl.textContent = S.network.name; delete nameEl.dataset.conflict; }
+  } catch (e) {
+    if (!(e instanceof ImpossibleEvidenceError)) throw e;
+    // Contradictory observations: keep the UI alive on the priors and say why.
+    result = S.cachedEngine.infer();
+    if (nameEl) { nameEl.textContent = 'Impossible evidence: observations contradict each other'; nameEl.dataset.conflict = '1'; }
+  }
 
   // Sensitivity heat-map: only when mode is active and a query is selected
   if (S.sensitivityMode && S.sensitivityQuery && S.network.getVariable(S.sensitivityQuery)) {

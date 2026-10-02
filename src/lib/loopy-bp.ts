@@ -12,6 +12,7 @@
  * - Damping blends the new message with the old one to aid convergence.
  * - Convergence is checked by the max absolute change across all messages.
  */
+import { validateEvidence } from './evidence.js';
 import type { Variable, CPT, Evidence, LikelihoodEvidence, Distribution } from './types.js';
 import {
   type Factor,
@@ -74,6 +75,7 @@ export function loopyBeliefPropagation(
   likelihoodEvidence?: LikelihoodEvidence,
   options?: LBPOptions,
 ): LBPResult {
+  validateEvidence(variables, evidence, likelihoodEvidence);
   const maxIterations = options?.maxIterations ?? 100;
   const tolerance = options?.tolerance ?? 1e-6;
   const damping = options?.damping ?? 0.5;

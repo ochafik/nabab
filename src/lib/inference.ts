@@ -5,6 +5,7 @@
  * Performs exact inference on Bayesian networks using the junction tree
  * algorithm with two-phase message passing (collect + distribute evidence).
  */
+import { validateEvidence, ImpossibleEvidenceError } from './evidence.js';
 import type { Variable, CPT, Evidence, LikelihoodEvidence, Distribution } from './types.js';
 import {
   type Factor,
@@ -177,8 +178,52 @@ export interface InferenceResult {
   posteriors: Map<Variable, Distribution>;
   /** The junction tree used. */
   junctionTree: JunctionTree;
-  /** Clique potentials after propagation. */
+  /** Clique potentials after propagation (normalized to sum to 1). */
   cliquePotentials: Map<number, Factor>;
+  /**
+   * P(evidence): the probability of the observations under the network. For
+   * hard evidence this is the joint probability of the observed outcomes; with
+   * likelihood evidence it is the expected likelihood weight (so it is not
+   * bounded by 1 only if weights exceed 1). It is 1 when there is no evidence.
+   * `infer` never returns a result with `probabilityOfEvidence` of 0 — see
+   * `ImpossibleEvidenceError`.
+   */
+  probabilityOfEvidence: number;
+}
+
+/**
+ * Run collect + distribute message passing on every connected component of the
+ * junction tree (the tree is a forest when the network is disconnected), then
+ * return P(evidence). After calibration every clique potential of a component
+ * sums to that component's evidence probability (Hugin architecture); P(e) is
+ * the product over components. Throws `ImpossibleEvidenceError` when it is zero
+ * or not a number, instead of letting NaN posteriors escape.
+ */
+export function propagate(
+  junctionTree: JunctionTree,
+  cliquePotentials: Map<number, Factor>,
+): number {
+  const { cliques, neighbors } = junctionTree;
+  const separatorPotentials = new Map<string, Factor>();
+  const visited = new Array<boolean>(cliques.length).fill(false);
+  let probabilityOfEvidence = 1;
+
+  // Roots are picked from the last clique downwards (as the single-tree code did).
+  for (let root = cliques.length - 1; root >= 0; root--) {
+    if (visited[root]) continue;
+    const marked1 = new Array<boolean>(cliques.length).fill(false);
+    collectEvidence(root, -1, marked1, cliques, neighbors, cliquePotentials, separatorPotentials);
+    const marked2 = new Array<boolean>(cliques.length).fill(false);
+    distributeEvidence(root, marked2, cliques, neighbors, cliquePotentials, separatorPotentials);
+    for (let i = 0; i < cliques.length; i++) if (marked1[i]) visited[i] = true;
+
+    const potential = cliquePotentials.get(root)!;
+    let sum = 0;
+    for (let i = 0; i < potential.values.length; i++) sum += potential.values[i];
+    if (!(sum > 0)) throw new ImpossibleEvidenceError();
+    probabilityOfEvidence *= sum;
+  }
+  return probabilityOfEvidence;
 }
 
 /**
@@ -189,6 +234,10 @@ export interface InferenceResult {
  * @param evidence Optional hard evidence (variable -> outcome string)
  * @param likelihoodEvidence Optional soft evidence (variable -> outcome -> weight)
  * @param options Optional guard budget (maxCliqueEntries) and triangulation heuristic
+ * @throws Error if the evidence names an unknown variable or outcome, or has
+ *   invalid likelihood weights (see `validateEvidence`).
+ * @throws ImpossibleEvidenceError if the evidence has probability zero (e.g.
+ *   contradictory observations); no posterior exists in that case.
  */
 export function infer(
   variables: readonly Variable[],
@@ -197,6 +246,8 @@ export function infer(
   likelihoodEvidence?: LikelihoodEvidence,
   options?: InferOptions,
 ): InferenceResult {
+  validateEvidence(variables, evidence, likelihoodEvidence);
+
   // Build DAG from CPTs
   const cptByVar = new Map<Variable, CPT>();
   for (const cpt of cpts) {
@@ -231,7 +282,7 @@ export function infer(
   const junctionTree = buildJunctionTree(dag, { heuristic: options?.eliminationHeuristic });
 
   if (junctionTree.cliques.length === 0) {
-    return { posteriors: new Map(), junctionTree, cliquePotentials: new Map() };
+    return { posteriors: new Map(), junctionTree, cliquePotentials: new Map(), probabilityOfEvidence: 1 };
   }
 
   // Build fusioned definitions: CPT * likelihood (evidence)
@@ -295,24 +346,7 @@ export function infer(
   }
 
   // ── Global propagation ──
-  const separatorPotentials = new Map<string, Factor>();
-  const startClique = junctionTree.cliques.length - 1;
-
-  // Collect evidence (bottom-up)
-  const marked1 = new Array(junctionTree.cliques.length).fill(false);
-  collectEvidence(
-    startClique, -1, marked1,
-    junctionTree.cliques, junctionTree.neighbors,
-    cliquePotentials, separatorPotentials,
-  );
-
-  // Distribute evidence (top-down)
-  const marked2 = new Array(junctionTree.cliques.length).fill(false);
-  distributeEvidence(
-    startClique, marked2,
-    junctionTree.cliques, junctionTree.neighbors,
-    cliquePotentials, separatorPotentials,
-  );
+  const probabilityOfEvidence = propagate(junctionTree, cliquePotentials);
 
   // Normalize each clique potential
   for (const [i, potential] of cliquePotentials) {
@@ -331,5 +365,5 @@ export function infer(
     }
   }
 
-  return { posteriors, junctionTree, cliquePotentials };
+  return { posteriors, junctionTree, cliquePotentials, probabilityOfEvidence };
 }

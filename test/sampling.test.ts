@@ -136,6 +136,6 @@ describe('likelihoodWeighting', () => {
   });
 
   it('rejects unknown outcomes', () => {
-    expect(() => likelihoodWeighting(asia.variables, asia.cpts, new Map([['asia', 'maybe']]), undefined, 1)).toThrow(/Unknown outcome/);
+    expect(() => likelihoodWeighting(asia.variables, asia.cpts, new Map([['asia', 'maybe']]), undefined, 1)).toThrow(/unknown outcome/i);
   });
 });
