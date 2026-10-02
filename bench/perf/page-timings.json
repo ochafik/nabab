@@ -1,150 +1,150 @@
 {
  "version": 1,
- "provisional": true,
- "recordedAt": "2026-10-02T10:08:04.572Z",
+ "provisional": false,
+ "recordedAt": "2026-10-02T10:12:39.838Z",
  "models": {
   "dogproblem.xmlbif": {
-   "render": 29,
+   "render": 78,
    "task": 0
   },
   "alarm.xml": {
-   "render": 46,
-   "task": 0
+   "render": 141,
+   "task": 91
   },
   "car-starts.xml": {
-   "render": 35,
-   "task": 0
+   "render": 102,
+   "task": 51
   },
   "car-starts-light.xml": {
-   "render": 34,
-   "task": 0
+   "render": 103,
+   "task": 54
   },
   "simple.xml": {
-   "render": 26,
+   "render": 73,
    "task": 0
   },
   "simple2.xml": {
-   "render": 26,
+   "render": 73,
    "task": 0
   },
   "example1.xml": {
-   "render": 39,
-   "task": 0
+   "render": 124,
+   "task": 75
   },
   "example2.xml": {
-   "render": 41,
-   "task": 0
+   "render": 123,
+   "task": 73
   },
   "example3.xml": {
-   "render": 40,
-   "task": 0
+   "render": 121,
+   "task": 71
   },
   "example4.xml": {
-   "render": 38,
-   "task": 0
+   "render": 115,
+   "task": 68
   },
   "example5.xml": {
-   "render": 39,
-   "task": 0
+   "render": 118,
+   "task": 69
   },
   "example6.xml": {
-   "render": 41,
-   "task": 0
+   "render": 124,
+   "task": 72
   },
   "example7.xml": {
-   "render": 39,
-   "task": 0
+   "render": 119,
+   "task": 71
   },
   "example8.xml": {
-   "render": 39,
-   "task": 0
+   "render": 121,
+   "task": 67
   },
   "example9.xml": {
-   "render": 38,
-   "task": 0
+   "render": 111,
+   "task": 63
   },
   "example10.xml": {
-   "render": 39,
-   "task": 0
+   "render": 121,
+   "task": 70
   },
   "Graph1.xml": {
-   "render": 115,
-   "task": 99
+   "render": 316,
+   "task": 268
   },
   "bench/asia.bif": {
-   "render": 29,
+   "render": 83,
    "task": 0
   },
   "bench/sachs.bif": {
-   "render": 35,
-   "task": 0
+   "render": 103,
+   "task": 52
   },
   "bench/child.bif": {
-   "render": 39,
-   "task": 0
+   "render": 111,
+   "task": 61
   },
   "bench/insurance.bif": {
-   "render": 49,
-   "task": 0
+   "render": 154,
+   "task": 103
   },
   "bench/water.bif": {
-   "render": 84,
-   "task": 66
+   "render": 264,
+   "task": 211
   },
   "bench/mildew.bif": {
-   "render": 153,
-   "task": 129
+   "render": 477,
+   "task": 390
   },
   "bench/alarm.bif": {
-   "render": 44,
-   "task": 0
+   "render": 141,
+   "task": 89
   },
   "bench/barley.bif": {
-   "render": 247,
-   "task": 229
+   "render": 720,
+   "task": 628
   },
   "bench/hailfinder.bif": {
-   "render": 60,
-   "task": 0
+   "render": 224,
+   "task": 161
   },
   "bench/hepar2.bif": {
-   "render": 63,
-   "task": 0
+   "render": 217,
+   "task": 155
   },
   "bench/win95pts.bif": {
-   "render": 56,
-   "task": 0
+   "render": 185,
+   "task": 135
   },
   "bench/pathfinder.bif": {
-   "render": 121,
-   "task": 101
+   "render": 409,
+   "task": 330
   },
   "bench/munin1.bif": {
-   "render": 113,
-   "task": 96
+   "render": 364,
+   "task": 315
   },
   "bench/andes.bif": {
-   "render": 143,
-   "task": 126
+   "render": 441,
+   "task": 386
   },
   "bench/diabetes.bif": {
-   "render": 960,
-   "task": 937
+   "render": 3137,
+   "task": 2961
   },
   "bench/pigs.bif": {
-   "render": 263,
-   "task": 241
+   "render": 894,
+   "task": 819
   },
   "bench/link.bif": {
-   "render": 634,
-   "task": 616
+   "render": 1889,
+   "task": 1810
   },
   "bench/weather.csv": {
-   "render": 9,
+   "render": 20,
    "task": 0
   },
   "bench/students.csv": {
-   "render": 11,
+   "render": 25,
    "task": 0
   }
  }
