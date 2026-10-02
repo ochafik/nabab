@@ -1,4 +1,8 @@
-/** Continuous (Gaussian) variable support for Bayesian networks. */
+/**
+ * Continuous (Gaussian) variable support for Bayesian networks.
+ *
+ * @experimental Prototype-grade: the API may change or be removed without notice.
+ */
 import type { Evidence } from './types.js';
 import { BayesianNetwork } from './network.js';
 

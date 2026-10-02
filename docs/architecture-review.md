@@ -1,3 +1,5 @@
+> **Historical snapshot (March 2026).** This review describes the codebase as it was then and is partly stale (for example the DOMParser-based parsing, min-degree triangulation and the single 800-line viewer `main.ts` have since been replaced). See [README.md](../README.md) for the current architecture.
+
 # Architecture Review: nabab
 
 A detailed analysis of nabab's TypeScript Bayesian network engine, covering what works well, what's missing, and where to go next.

@@ -18,13 +18,21 @@ Nabab is a pure TypeScript library for exact and approximate inference on discre
   - **Variable Elimination (VE)** -- exact single-variable query, often faster than full JT when you only need one posterior
   - **Loopy Belief Propagation (LBP)** -- approximate sum-product message passing on the factor graph; fast on high-treewidth networks where exact methods struggle
   - **Worker-based inference** -- runs inference in a Web Worker (browser) or `worker_threads` (Node.js) to keep the main thread responsive
-  - **GPU-ready factor ops** -- prototype TensorFlow.js backend expressing factor multiply/marginalize as tensor broadcast + sum (WebGPU/WASM acceleration path)
+  - **GPU-ready factor ops** (experimental) -- prototype TensorFlow.js backend expressing factor multiply/marginalize as tensor broadcast + sum (WebGPU/WASM acceleration path)
   - **Soft evidence (Jeffrey's rule)** -- likelihood weighting on any variable, not just hard observations
 - **Interactive D3 viewer** with dagre layout, probability bar sliders, soft/hard evidence toggling, CPT inspection, drag-and-drop XML loading, and URL state persistence
 - **DOM-free library** -- the inference engine uses regex-based XML parsing and has zero DOM dependencies; works in Node.js, Deno, Bun, Cloudflare Workers, or any browser
 - **MCP server** for Claude and other LLM tool-use integration, with an interactive MCP App viewer
 - **17 standard benchmark models** (Asia, Alarm, Sachs, Child, Insurance, Water, Hepar2, Hailfinder, Win95pts, Pathfinder, Barley, Mildew, Diabetes, Link, Pigs, Andes, Munin1)
-- **542 tests** across 31 test files covering factors, graphs, triangulation, inference, parsers, cross-validation, LBP, VE, cached inference, worker inference, and TensorFlow.js factor ops
+- **583 tests** across 33 test files covering factors, graphs, triangulation, inference, evidence validation, parsers, cross-validation, LBP, VE, cached inference, worker inference, the MCP server, and TensorFlow.js factor ops
+
+### Stability
+
+The core library (factors, junction tree / cached / VE / LBP inference, parsers, sampling, MPE, VOI, sensitivity, CPT templates, temporal nodes) is tested and considered stable. Prototype-grade modules are tagged `@experimental` in their JSDoc and may change or disappear without notice: `tfjs-factor.ts` (TensorFlow.js factor ops, not exported from the package entry point), `wasm-factor.ts` (typed-array experiment), `gaussian.ts` (continuous / CLG variables) and `causal-discovery.ts` (wrapper over `@kanaries/causal`, the library's only runtime dependency).
+
+### Evidence semantics
+
+Evidence is validated by every inference entry point (`validateEvidence`): unknown variables, unknown outcomes, negative / NaN weights and all-zero likelihood vectors throw a descriptive `Error`. Evidence with probability zero (e.g. contradictory observations) throws `ImpossibleEvidenceError` rather than returning NaN posteriors. `InferenceResult.probabilityOfEvidence` exposes P(evidence).
 
 ## Quick Start
 
@@ -296,7 +304,7 @@ Everything is deployed to Cloudflare Workers as a single Worker (`wrangler.jsonc
 npm run deploy   # builds the viewer + MCP App, then wrangler deploy
 ```
 
-Sessions and the server→viewer command queue live in a SQLite-backed Durable Object, so they survive Cloudflare's edge load balancing with no Redis dependency. An alternative Vercel deployment (`http.ts`, `vercel.json`) keeps state in warm Lambdas and can use Upstash Redis (`UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN`) for cross-instance command delivery.
+Sessions and the server→viewer command queue live in a SQLite-backed Durable Object, so they survive Cloudflare's edge load balancing with no external store.
 
 ## Benchmark Results
 
@@ -340,6 +348,7 @@ src/lib/                -- Pure inference library (npm-publishable)
   factor.ts             -- Factor algebra (multiply, marginalize, evidence, normalize)
                            Optimized with Int32Array stride maps, subset fast paths,
                            trailing/leading marginalization fast paths
+  evidence.ts           -- Evidence validation (validateEvidence, ImpossibleEvidenceError)
   graph.ts              -- DAG, moralization, min-fill triangulation, clique finding,
                            max-weight spanning tree junction tree construction
   inference.ts          -- Junction tree inference (collect + distribute evidence)
@@ -348,7 +357,7 @@ src/lib/                -- Pure inference library (npm-publishable)
   loopy-bp.ts           -- Loopy belief propagation (damped sum-product)
   worker-inference.ts   -- Off-main-thread inference (Web Worker / worker_threads)
   inference-worker.ts   -- Worker script (counterpart to worker-inference.ts)
-  tfjs-factor.ts        -- GPU-accelerated factor ops via TensorFlow.js tensors
+  tfjs-factor.ts        -- (experimental) factor ops via TensorFlow.js tensors
   network.ts            -- BayesianNetwork class (parsing + inference facade)
   xmlbif-parser.ts      -- XMLBIF 0.3 parser (regex-based, DOM-free)
   bif-parser.ts         -- BIF format parser (bnlearn plain text format)
@@ -371,16 +380,15 @@ src/mcp/                -- MCP server for LLM integration
   server.ts             -- Transport-agnostic server factory (tools, assets adapter)
   node.ts               -- Node entry: stdio or express HTTP (`npm run mcp`)
   worker.ts             -- Cloudflare Workers entry (Durable Object sessions)
-  commands.ts           -- Server→viewer command queue (Redis or in-memory)
+  commands.ts           -- Server→viewer command queue (in-memory)
 
-test/                   -- Vitest test suite (542 tests)
+test/                   -- Vitest test suite (583 tests)
 bench/                  -- Benchmark runner and 17 bnlearn models
   models/               -- .bif files (asia, alarm, sachs, child, etc.)
   run-bench.ts          -- Benchmark runner
   results/              -- Baseline results and comparison tools
 
 wrangler.jsonc          -- Cloudflare Workers config (static assets, DO, text modules)
-http.ts / vercel.json   -- Alternative Vercel serverless deployment
 scripts/copy-viewer-assets.mjs -- Copies examples + bench models into the build
 ```
 
@@ -427,7 +435,7 @@ Key exports from `nabab` (via `src/lib/index.ts`):
 - `LikelihoodEvidence` -- `Map<string, Map<string, number>>` (soft evidence)
 - `Distribution` -- `Map<string, number>`
 - `Factor` -- `{ variables, values: Float64Array, strides }`
-- `InferenceResult` -- `{ posteriors, junctionTree, cliquePotentials }`
+- `InferenceResult` -- `{ posteriors, junctionTree, cliquePotentials, probabilityOfEvidence }`
 - `SampleResult` -- `{ variables, n, columns, weights, totalWeight }` (column-major samples)
 - `Explanation` -- `{ assignment: Map<string, string>, logProbability }`
 

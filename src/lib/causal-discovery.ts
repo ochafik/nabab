@@ -7,6 +7,8 @@
  * @kanaries/causal provides both discrete-appropriate tests (chi-squared, G-squared,
  * BDeu score) and continuous tests (Fisher's z, Gaussian BIC). This wrapper
  * defaults to discrete-appropriate methods since nabab works with categorical data.
+ *
+ * @experimental Prototype-grade: the API may change or be removed without notice.
  */
 import {
   pc,

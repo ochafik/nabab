@@ -8,6 +8,8 @@
  * Key insight: a Factor with variables [A(2), B(3), C(2)] maps to a
  * tf.Tensor of shape [2, 3, 2]. Multiply factors becomes reshape +
  * broadcast + element-wise mul. Marginalize becomes tf.sum over axes.
+ *
+ * @experimental Prototype-grade: the API may change or be removed without notice.
  */
 import * as tf from '@tensorflow/tfjs-core';
 import type { Variable } from './types.js';

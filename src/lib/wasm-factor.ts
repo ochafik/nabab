@@ -19,6 +19,8 @@
  *   Offset align8(4+nVars*8):  values        (tableSize x Float64)
  *
  * The values section is 8-byte aligned for Float64Array overlay compatibility.
+ *
+ * @experimental Prototype-grade: the API may change or be removed without notice.
  */
 
 // ─── Layout helpers ────────────────────────────────────────────────
