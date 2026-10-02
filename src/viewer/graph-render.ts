@@ -5,15 +5,19 @@
 import * as d3 from 'd3';
 import dagre from '@dagrejs/dagre';
 import { ImpossibleEvidenceError } from '../lib/evidence.js';
+import { formatProbabilityOfEvidence, evidenceKey } from './preview-logic.js';
 import { analyticSensitivity, variableInfluenceMap } from '../lib/analytic-sensitivity.js';
 import { multiQueryVOI } from '../lib/voi.js';
 import type { Variable, Distribution } from '../lib/types.js';
 import { BayesianNetwork } from '../lib/network.js';
-import { S, IS_MCP } from './state.js';
+import { S, IS_MCP, getActive } from './state.js';
 import {
   effectiveEvidence, getWeights, toggleEye, eyeTooltip, cycleObservation,
-  setSlider, cycleOutcome, setMultiWeight, clearOutcomeTweak,
+  setSlider, cycleOutcome, setMultiWeight, clearOutcomeTweak, observeHard, commitTarget,
 } from './evidence.js';
+import { registry, type NodeGeom } from './bar-registry.js';
+import { resetPreviewAfterRender } from './preview.js';
+import { refreshExplain, reapplyExplain } from './explain.js';
 import { selectNode, clearSelection } from './selection.js';
 import { renderInfoPanel } from './info-panel.js';
 import { saveStateToHash, saveStateToLocalStorage } from './persistence.js';
@@ -146,6 +150,7 @@ export function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Dist
   _svg = d3.select(container).append('svg').attr('width', W).attr('height', H)
     .style('user-select', 'none');
   const svg = _svg;
+  registry.clear();
   const defs = svg.append('defs');
   // Measure text widths to size nodes correctly
   measureTextWidths(svg, net, posteriors);
@@ -204,7 +209,9 @@ export function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Dist
     const dist = posteriors.get(v);
     const w = nodeW(v);
     const h = nodeH(v);
-    const isObs = S.observationEnabled.has(v.name);
+    const doValue = S.interventions.get(v.name);
+    const isDo = doValue !== undefined;
+    const isObs = !isDo && S.observationEnabled.has(v.name);
     const isHard = isObs && S.hardEvidence.has(v.name);
     const isSoft = isObs && S.softEvidence.has(v.name);
 
@@ -237,6 +244,9 @@ export function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Dist
       borderCol = influenceNorm > 0.3
         ? `hsl(${Math.round(20 - influenceNorm * 15)}, ${Math.round(50 + influenceNorm * 40)}%, ${isDark ? 55 : 45}%)`
         : 'var(--border-node)';
+    } else if (isDo) {
+      bgFill = 'var(--pv-do-bg)';
+      borderCol = 'var(--pv-do)';
     } else if (isDegenerate) {
       bgFill = isDark ? '#2a1a1a' : '#fef2f2';
       borderCol = 'var(--accent-hard)';
@@ -248,7 +258,7 @@ export function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Dist
       borderCol = 'var(--border-node)';
     }
     // Accent for sliders: colored when observed, neutral when not
-    const nodeAccent = isObs
+    const nodeAccent = isDo ? 'var(--pv-do)' : isObs
       ? (isHard ? 'var(--accent-hard)' : isSoft ? 'var(--accent-soft)' : `hsl(${hue}, 55%, ${isDark ? 55 : 45}%)`)
       : 'var(--accent)';
 
@@ -264,7 +274,7 @@ export function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Dist
 
     const bgRect = ng.append('rect').attr('x', -w / 2).attr('y', -h / 2)
       .attr('width', w).attr('height', h).attr('rx', 8)
-      .attr('fill', bgFill).attr('stroke', borderCol).attr('stroke-width', 1.5)
+      .attr('fill', bgFill).attr('stroke', borderCol).attr('stroke-width', isDo ? 2.5 : 1.5)
       .attr('filter', 'url(#node-shadow)');
     if (isDegenerate) {
       bgRect.attr('stroke-dasharray', '4,3').attr('opacity', 0.7);
@@ -300,6 +310,14 @@ export function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Dist
     ).attr('cursor', 'grab');
 
     ng.attr('class', 'node-g').attr('data-var', v.name);
+    const geom: NodeGeom = { name: v.name, g: ng as unknown as NodeGeom['g'], w, h, headerY: -h / 2 + 14, bars: [] };
+    registry.set(v.name, geom);
+    if (isDo) {
+      ng.append('rect').attr('x', -w / 2 + 6).attr('y', -h / 2 - 7).attr('width', 26).attr('height', 14).attr('rx', 7)
+        .attr('fill', 'var(--pv-do)').attr('pointer-events', 'none');
+      ng.append('text').attr('x', -w / 2 + 19).attr('y', -h / 2).attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+        .attr('font-size', 9).attr('font-weight', 700).attr('fill', '#fff').attr('pointer-events', 'none').text('do');
+    }
 
     // Click: only fires for non-drag interactions
     ng.on('click', (ev) => {
@@ -313,7 +331,9 @@ export function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Dist
     // Compute display weights (same source as sliders: evidence when observed, posterior when not)
     const dw = isObs ? getWeights(v) : dist ? new Map(v.outcomes.map(o => [o, dist.get(o) ?? 0])) : null;
     let labelSuffix: string;
-    if (isDegenerate && !isObs) {
+    if (isDo) {
+      labelSuffix = ` = ${doValue}`;
+    } else if (isDegenerate && !isObs) {
       labelSuffix = ': inconsistent';
     } else if (isHard) {
       labelSuffix = ` = ${S.hardEvidence.get(v.name)}`;
@@ -355,14 +375,14 @@ export function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Dist
       .attr('transform', `translate(${-w / 2 + 32},${ry})`)
       .on('click', (ev) => { ev.stopPropagation(); cycleObservation(v); });
     nameG.append('rect').attr('x', -2).attr('y', -10).attr('width', w - 48).attr('height', 20).attr('fill', 'transparent');
-    const nameColor = isObs ? (isHard ? 'var(--accent-hard)' : 'var(--accent-soft)') : 'var(--text)';
+    const nameColor = isDo ? 'var(--pv-do)' : isObs ? (isHard ? 'var(--accent-hard)' : 'var(--accent-soft)') : 'var(--text)';
     nameG.append('text').attr('y', 4).attr('font-size', '12px').attr('font-weight', '600').attr('fill', nameColor)
       .text(v.name + labelSuffix);
 
     // ── Row 2: slider or bars ──
     if (dist) {
-      if (isSliderVar(v)) boolSlider(ng, v, dist, w, h, nodeAccent);
-      else multiNode(ng, v, dist, w, h, nodeAccent);
+      if (isSliderVar(v)) boolSlider(ng, v, dist, w, h, nodeAccent, geom);
+      else multiNode(ng, v, dist, w, h, nodeAccent, geom);
     }
   }
 }
@@ -476,10 +496,12 @@ function drawEdges(net: BayesianNetwork): void {
     const cy1 = y1 + (sdy1 * (1 - b) + ny * b) * cOff;
     const cx2 = ex + (sdx2 * (1 - b) - nx * b) * cOff;
     const cy2 = ey + (sdy2 * (1 - b) - ny * b) * cOff;
+    const cut = S.interventions.has(e.cn); // do(child): incoming edges are cut
     _edgeGroup.append('path')
       .attr('d', `M${x1},${y1} C${cx1},${cy1} ${cx2},${cy2} ${ex},${ey}`)
       .attr('fill', 'none')
-      .attr('stroke', 'var(--edge)').attr('stroke-width', 1.5).attr('marker-end', 'url(#arr)');
+      .attr('stroke', cut ? 'var(--pv-do)' : 'var(--edge)').attr('stroke-width', 1.5).attr('marker-end', 'url(#arr)')
+      .attr('stroke-dasharray', cut ? '3,5' : null).attr('opacity', cut ? 0.35 : 1);
   }
 }
 
@@ -566,7 +588,7 @@ function addSliderThumb(
   );
 }
 
-function boolSlider(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Variable, dist: Distribution, w: number, h: number, accent: string): void {
+function boolSlider(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Variable, dist: Distribution, w: number, h: number, accent: string, geom: NodeGeom): void {
   const showLabels = !isBoolVar(v);
   const bw = w - 34, bx = -bw / 2, by = -h / 2 + 33;
   const isObs = S.observationEnabled.has(v.name);
@@ -577,6 +599,7 @@ function boolSlider(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: V
   const tr = displayW.get(v.outcomes[0]) ?? 0; // right side = outcomes[0]
   const rx = 5; // bar corner radius — thumb/snap range is inset by rx
   const thumbMin = bx + rx, thumbMax = bx + bw - rx, thumbRange = thumbMax - thumbMin;
+  geom.bars.push({ outcome: v.outcomes[0], idx: 0, val: tr, x0: thumbMin, range: thumbRange, bx, bw, by, barH: 10, labelX: null });
 
   // Bar background (also a click target to jump the slider)
   const barBg = g.append('rect').attr('x', bx).attr('y', by - 4).attr('width', bw).attr('height', 18)
@@ -614,13 +637,13 @@ function boolSlider(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: V
   const snappedTrue = isObs && S.hardEvidence.get(v.name) === v.outcomes[0];
   addSnapZones(g, bx, by, bw, 10, [
     { x: thumbMin, label: `Click to observe as ${v.outcomes[1]}`, isSnapped: snappedFalse,
-      snap: () => { S.hardEvidence.set(v.name, v.outcomes[1]); S.softEvidence.delete(v.name); S.observationEnabled.add(v.name); render(); } },
+      snap: () => observeHard(v, v.outcomes[1]) },
     { x: thumbMax, label: `Click to observe as ${v.outcomes[0]}`, isSnapped: snappedTrue,
-      snap: () => { S.hardEvidence.set(v.name, v.outcomes[0]); S.softEvidence.delete(v.name); S.observationEnabled.add(v.name); render(); } },
+      snap: () => observeHard(v, v.outcomes[0]) },
   ]);
 }
 
-function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Variable, dist: Distribution, w: number, h: number, accent: string): void {
+function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Variable, dist: Distribution, w: number, h: number, accent: string, geom: NodeGeom): void {
   const isObs = S.observationEnabled.has(v.name);
   const tweaked = S.tweakedOutcomes.get(v.name) ?? new Set<string>();
 
@@ -666,6 +689,7 @@ function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Va
     // Bar background (click-to-jump)
     const mrx = 3; // bar corner radius — thumb/snap inset by mrx
     const mThumbMin = bx + mrx, mThumbMax = bx + bw - mrx, mThumbRange = mThumbMax - mThumbMin;
+    geom.bars.push({ outcome: o, idx: i, val, x0: mThumbMin, range: mThumbRange, bx, bw, by, barH: 6, labelX: [-w / 2 + 6, bx - 2] });
     const barHit = g.append('rect').attr('x', bx).attr('y', by - 4).attr('width', bw).attr('height', 14)
       .attr('fill', 'transparent').attr('cursor', 'pointer').attr('class', 'cz');
     g.append('rect').attr('x', bx).attr('y', by).attr('width', bw).attr('height', 6)
@@ -695,7 +719,7 @@ function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Va
       { x: mThumbMin, label: `Click to exclude ${o}`, isSnapped: isSnapped0,
         snap: () => setMultiWeight(v, i, 0) },
       { x: mThumbMax, label: `Click to observe as ${o}`, isSnapped: isSnapped100,
-        snap: () => { S.hardEvidence.set(v.name, o); S.softEvidence.delete(v.name); S.observationEnabled.add(v.name); S.tweakedOutcomes.set(v.name, new Set(v.outcomes)); render(); } },
+        snap: () => commitTarget(v, i, 1) },
     ]);
 
     y += NODE_H_PER_OUTCOME;
@@ -705,26 +729,36 @@ function multiNode(g: d3.Selection<SVGGElement, unknown, null, undefined>, v: Va
 // ─── Render orchestrator ─────────────────────────────────────────────
 
 export function render(): void {
-  if (!S.network || !S.cachedEngine) return;
+  const active = getActive();
+  if (!S.network || !active) return;
   const [he, se] = effectiveEvidence();
   let result;
   const nameEl = document.getElementById('network-name');
+  const t0 = performance.now();
   try {
-    result = S.cachedEngine.infer(he, se);
+    result = active.engine.infer(he, se);
+    S.lastInferMs = performance.now() - t0;
     if (nameEl && nameEl.dataset.conflict) { nameEl.textContent = S.network.name; delete nameEl.dataset.conflict; }
+    // do() evidence is structural (probability 1 in the mutilated network): only observations count.
+    const observed = se !== undefined || [...(he ?? [])].some(([k]) => !S.interventions.has(k));
+    S.lastProbabilityOfEvidence = observed ? result.probabilityOfEvidence : undefined;
   } catch (e) {
     if (!(e instanceof ImpossibleEvidenceError)) throw e;
     // Contradictory observations: keep the UI alive on the priors and say why.
-    result = S.cachedEngine.infer();
+    result = active.engine.infer();
+    S.lastProbabilityOfEvidence = 0;
     if (nameEl) { nameEl.textContent = 'Impossible evidence: observations contradict each other'; nameEl.dataset.conflict = '1'; }
   }
+  S.lastPosteriors = new Map();
+  for (const [v, d] of result.posteriors) S.lastPosteriors.set(v.name, d);
+  updateEvidenceBadge();
 
   // Sensitivity heat-map: only when mode is active and a query is selected
   if (S.sensitivityMode && S.sensitivityQuery && S.network.getVariable(S.sensitivityQuery)) {
     const qVar = S.network.getVariable(S.sensitivityQuery)!;
     const qOutcome = qVar.outcomes[0];
     try {
-      S.sensitivityResults = analyticSensitivity(S.network, S.sensitivityQuery, qOutcome, he && he.size > 0 ? he : undefined);
+      S.sensitivityResults = analyticSensitivity(active.net, S.sensitivityQuery, qOutcome, he && he.size > 0 ? he : undefined);
       S.sensitivityInfluence = variableInfluenceMap(S.sensitivityResults);
     } catch {
       S.sensitivityResults = null;
@@ -738,18 +772,29 @@ export function render(): void {
   // VOI: compute whenever any node is selected (no sensitivity mode needed)
   // Query targets = selected nodes (makes sense for both observed and unobserved:
   // "what else could I observe to learn more about these variables?")
-  if (S.selectedNodes.size > 0 && S.cachedEngine) {
-    try {
-      S.voiResults = multiQueryVOI(S.network, [...S.selectedNodes], he ?? new Map(), S.cachedEngine);
-    } catch (e) {
-      console.warn('VOI computation failed:', e);
-      S.voiResults = null;
+  // Memoised on (network, interventions, evidence, selection): re-renders
+  // that change none of these (zoom, drag, preview resets) don't recompute.
+  if (S.selectedNodes.size > 0) {
+    const voiKey = `${active.key}|${evidenceKey(he, se)}|${[...S.selectedNodes].sort().join(',')}`;
+    if (_voiMemo && _voiMemo.net === active.net && _voiMemo.key === voiKey) {
+      S.voiResults = _voiMemo.results;
+    } else {
+      try {
+        S.voiResults = multiQueryVOI(active.net, [...S.selectedNodes], he ?? new Map(), active.engine);
+      } catch (e) {
+        console.warn('VOI computation failed:', e);
+        S.voiResults = null;
+      }
+      _voiMemo = { net: active.net, key: voiKey, results: S.voiResults };
     }
   } else {
     S.voiResults = null;
   }
 
   renderGraph(S.network, result.posteriors);
+  resetPreviewAfterRender();
+  reapplyExplain();
+  refreshExplain();
   renderInfoPanel();
 
   if (IS_MCP) {
@@ -762,6 +807,19 @@ export function render(): void {
       window.parent.postMessage({ type: 'nabab-posteriors', d }, '*');
     }
   }
+}
+
+let _voiMemo: { net: BayesianNetwork; key: string; results: typeof S.voiResults } | null = null;
+
+/** Header badge: P(evidence), only shown when something is observed. */
+function updateEvidenceBadge(): void {
+  const el = document.getElementById('pe-badge');
+  if (!el) return;
+  const p = S.lastProbabilityOfEvidence;
+  if (p === undefined) { el.textContent = ''; el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.textContent = `P(e) = ${formatProbabilityOfEvidence(p)}`;
+  el.title = 'Probability of the current evidence under the model (soft evidence enters as likelihood weights).';
 }
 
 // ─── Layout ──────────────────────────────────────────────────────────

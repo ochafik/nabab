@@ -26,6 +26,14 @@
       --thumb-stroke: #2563eb;
       --node-shadow: rgba(0,0,0,0.08);
       --header-bg: #f9fafb;
+      --pv-gain: #22c55e;
+      --pv-loss: #ef4444;
+      --pv-gain-text: #15803d;
+      --pv-loss-text: #b91c1c;
+      --pv-halo: #f59e0b;
+      --pv-do: #7c3aed;
+      --pv-do-bg: #f5f0ff;
+      --pv-mpe: #0d9488;
     }
     @media (prefers-color-scheme: dark) {
       :root {
@@ -49,6 +57,14 @@
         --thumb-stroke: #3b82f6;
         --node-shadow: rgba(0,0,0,0.3);
         --header-bg: #161822;
+        --pv-gain: #22c55e;
+        --pv-loss: #f87171;
+        --pv-gain-text: #4ade80;
+        --pv-loss-text: #fca5a5;
+        --pv-halo: #fbbf24;
+        --pv-do: #a78bfa;
+        --pv-do-bg: #241b3a;
+        --pv-mpe: #2dd4bf;
       }
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -203,6 +219,69 @@
     .voi-value { width: 48px; text-align: right; font-size: 11px; color: var(--text-secondary); flex-shrink: 0; }
     .tornado-param { flex: 1; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .tornado-range { width: 100px; height: 10px; background: var(--bg-bar); border-radius: 5px; overflow: hidden; position: relative; flex-shrink: 0; }
+    /* What-if hover preview */
+    .node-g { transition: opacity 0.12s; }
+    .node-g.pv-calm { opacity: 0.4; }
+    .pv-spin { animation: pv-spin 0.8s linear infinite; transform-origin: 0 0; }
+    @keyframes pv-spin { to { transform: rotate(360deg); } }
+    #pv-hint {
+      display: none; position: fixed; right: 16px; top: 96px; width: max-content; max-width: 420px;
+      background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px;
+      padding: 6px 10px; font-size: 12px; color: var(--text); box-shadow: 0 4px 16px var(--node-shadow);
+      pointer-events: none; z-index: 50; line-height: 1.5;
+    }
+    #pv-hint.visible { display: block; }
+    #pv-hint .pv-legend, #pv-hint .pv-keys { display: block; color: var(--text-secondary); font-size: 11px; }
+    #pv-hint .pv-warn { color: var(--accent-hard); font-weight: 600; }
+    .pv-chip { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 3px 0 8px; vertical-align: -1px; }
+    .pv-chip:first-child { margin-left: 0; }
+    .pv-chip-gain { background: var(--pv-gain); }
+    .pv-chip-loss { background: var(--pv-loss); }
+    .pv-chip-halo { background: none; border: 2.5px solid var(--pv-halo); }
+    /* Header badge */
+    .pe-badge {
+      font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-secondary);
+      background: var(--bg-surface); border: 1px solid var(--border); border-radius: 10px; padding: 1px 8px;
+    }
+    /* Explain panel */
+    #explain-panel {
+      display: none; position: fixed; left: 16px; bottom: 16px; width: 280px; z-index: 100;
+      background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px;
+      font-size: 12px; box-shadow: 0 4px 16px var(--node-shadow); padding: 6px 0;
+    }
+    #explain-panel.visible { display: block; }
+    #explain-panel .ex-title { font-weight: 700; padding: 2px 12px 6px; color: var(--pv-mpe); display: flex; justify-content: space-between; }
+    #explain-panel .ex-title button { background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 14px; }
+    #explain-panel .ex-row { padding: 4px 12px; cursor: pointer; font-variant-numeric: tabular-nums; }
+    #explain-panel .ex-row:hover { background: var(--bg-bar); }
+    #explain-panel .ex-row.sel { background: var(--bg-bar); box-shadow: inset 3px 0 0 var(--pv-mpe); }
+    #explain-panel .ex-status { padding: 4px 12px; color: var(--text-secondary); font-size: 11px; }
+    /* Context menu + help overlay */
+    #ctx-menu {
+      display: none; position: fixed; z-index: 300; min-width: 160px; max-height: 60vh; overflow: auto;
+      background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px;
+      box-shadow: 0 4px 16px var(--node-shadow); padding: 4px 0; font-size: 12px;
+    }
+    #ctx-menu.visible { display: block; }
+    #ctx-menu .ctx-head { padding: 4px 12px; color: var(--text-secondary); font-weight: 600; }
+    #ctx-menu button { display: block; width: 100%; text-align: left; background: none; border: none; color: var(--text); padding: 5px 12px; cursor: pointer; font-size: 12px; }
+    #ctx-menu button:hover { background: var(--border); }
+    #ctx-menu button.on { color: var(--pv-do); font-weight: 700; }
+    #help-overlay {
+      display: none; position: fixed; inset: 0; z-index: 400; background: rgba(0,0,0,0.45);
+      align-items: center; justify-content: center;
+    }
+    #help-overlay.visible { display: flex; }
+    #help-box {
+      background: var(--bg-surface); color: var(--text); border: 1px solid var(--border); border-radius: 10px;
+      padding: 16px 20px; width: min(560px, calc(100% - 32px)); max-height: 85vh; overflow: auto; font-size: 13px;
+      box-shadow: 0 8px 32px var(--node-shadow);
+    }
+    #help-box h2 { font-size: 15px; margin-bottom: 8px; }
+    #help-box table { border-collapse: collapse; width: 100%; }
+    #help-box td { padding: 4px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    #help-box td:first-child { white-space: nowrap; font-weight: 600; width: 38%; }
+    #help-box kbd { background: var(--bg-bar); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; font-size: 11px; }
     .tornado-range-fill { height: 100%; position: absolute; border-radius: 5px; }
   </style>
 </head>
@@ -210,6 +289,7 @@
   <header>
     <h1>Nabab</h1>
     <span class="info" id="network-name">No network loaded</span>
+    <span class="pe-badge" id="pe-badge" style="display:none"></span>
   </header>
   <div class="toolbar">
     <button id="btn-load-example">Load Example</button>
@@ -264,6 +344,8 @@
     <button id="btn-layout">Auto Layout</button>
     <button id="btn-fit">Fit View</button>
     <button id="btn-clear-evidence">Clear Evidence</button>
+    <button id="btn-explain" title="Most probable explanation of the current evidence (top 5, marked on each node)">Explain</button>
+    <button id="btn-preview" class="active" title="What-if preview: hover an outcome bar to see how the whole network would change">Preview</button>
     <button id="btn-sensitivity" title="Toggle sensitivity analysis: select a node to see which variables and parameters influence it most">Sensitivity</button>
     <span class="export-wrapper">
       <button id="btn-export">Export</button>
@@ -272,9 +354,30 @@
         <button id="btn-export-json">Export JSON</button>
       </span>
     </span>
-    <span class="hint">Scroll to pan | ⌘/Ctrl+scroll or pinch to zoom | Click name to cycle | Drag slider for soft evidence | Eye toggles | Drop .xml/.bif files to load | Drop .csv to learn structure | <a href="/help">MCP server</a></span>
+    <button id="btn-help" title="Keyboard shortcuts and interactions (?)">?</button>
+    <span class="hint">Hover a bar to preview | Click to commit | Alt-click or right-click to intervene | Scroll to pan, ⌘/Ctrl+scroll to zoom | Drop .xml/.bif/.csv to load | <a href="/help">MCP server</a></span>
   </div>
   <div id="graph-container"></div>
+  <div id="pv-hint"></div>
+  <div id="explain-panel"></div>
+  <div id="ctx-menu"></div>
+  <div id="help-overlay"><div id="help-box">
+    <h2>Interactions</h2>
+    <table>
+      <tr><td>Hover a bar</td><td>What-if preview: the horizontal position picks 0, 25, 50, 75 or 100% for that outcome; the whole network shows the resulting change (green gain, red loss, halo = size of change). Unaffected nodes dim.</td></tr>
+      <tr><td>Click a bar</td><td>Commit exactly the previewed value (100% = hard evidence, otherwise soft evidence via Jeffrey's rule, 0% rules the outcome out)</td></tr>
+      <tr><td>Drag a thumb</td><td>Set a continuous soft-evidence value; click a thumb to clear it</td></tr>
+      <tr><td>Click a name</td><td>Cycle hard evidence through the outcomes, then clear</td></tr>
+      <tr><td>Eye icon / <kbd>Space</kbd></td><td>Toggle observations on the node / the selected nodes</td></tr>
+      <tr><td><kbd>Alt</kbd>-click a bar, or right-click a node</td><td>Intervene: do(X = outcome). Incoming edges are cut (dashed); repeat to clear. Previews and inference use the mutilated network.</td></tr>
+      <tr><td>Explain</td><td>Mark the most probable explanation of the evidence on every node; list the top 5 by log-probability</td></tr>
+      <tr><td>Click a node, <kbd>Shift</kbd>-click</td><td>Select (value of information, CPT, sensitivity panels); extend the selection</td></tr>
+      <tr><td>Scroll / <kbd>&#8984;</kbd>or<kbd>Ctrl</kbd>+scroll / pinch</td><td>Pan / zoom</td></tr>
+      <tr><td>Long-press a bar (touch)</td><td>Preview; tap the bar to commit</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Cancel the preview, close menus, clear the selection</td></tr>
+      <tr><td><kbd>?</kbd></td><td>This help</td></tr>
+    </table>
+  </div></div>
   <div id="info-panel">
     <div class="panel-tabs" id="info-tabs"></div>
     <div class="info-panel-body" id="info-body"></div>

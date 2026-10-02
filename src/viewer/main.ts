@@ -5,11 +5,15 @@
  */
 import { toXmlBif } from '../lib/xmlbif-writer.js';
 import { toJSON } from '../lib/json-export.js';
-import { S, IS_MCP } from './state.js';
+import { S, IS_MCP, setIntervention } from './state.js';
 import { setRerender, rerender } from './render-bus.js';
 import { render, autoLayout, fitView } from './graph-render.js';
 import { loadExample, loadExampleFile, loadNetwork, learnNetworkFromCsv, loadStateFromHash } from './loading.js';
 import { initMcpApp } from './mcp-app.js';
+import { initPreview, clearPreview } from './preview.js';
+import { initContextMenu, hideContextMenu } from './context-menu.js';
+import { toggleExplain } from './explain.js';
+import { clearSelection } from './selection.js';
 
 setRerender(render);
 
@@ -40,6 +44,34 @@ document.addEventListener('keydown', (e) => {
   }
   rerender();
 });
+
+// Escape: cancel preview, close menus / help, clear selection. ?: help overlay.
+const helpOverlay = document.getElementById('help-overlay');
+function toggleHelp(show?: boolean): void {
+  helpOverlay?.classList.toggle('visible', show ?? !helpOverlay.classList.contains('visible'));
+}
+document.addEventListener('keydown', (e) => {
+  const tag = (e.target as HTMLElement).tagName;
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  if (e.key === 'Escape') {
+    clearPreview();
+    hideContextMenu();
+    toggleHelp(false);
+    clearSelection();
+  } else if (e.key === '?') {
+    toggleHelp();
+  }
+});
+helpOverlay?.addEventListener('click', (e) => { if (e.target === helpOverlay) toggleHelp(false); });
+document.getElementById('btn-help')?.addEventListener('click', () => toggleHelp());
+document.getElementById('btn-explain')?.addEventListener('click', toggleExplain);
+document.getElementById('btn-preview')?.addEventListener('click', () => {
+  S.previewEnabled = !S.previewEnabled;
+  document.getElementById('btn-preview')!.classList.toggle('active', S.previewEnabled);
+  if (!S.previewEnabled) clearPreview();
+});
+initPreview();
+initContextMenu();
 
 // ─── Event listeners ─────────────────────────────────────────────────
 
@@ -125,7 +157,9 @@ if (!IS_MCP) {
 // Clear evidence button works in both modes
 document.getElementById('btn-clear-evidence')?.addEventListener('click', () => {
   S.hardEvidence = new Map(); S.softEvidence = new Map();
-  S.observationEnabled = new Set(); rerender();
+  S.observationEnabled = new Set();
+  for (const name of [...S.interventions.keys()]) setIntervention(name, null);
+  rerender();
 });
 
 // Sensitivity mode toggle
