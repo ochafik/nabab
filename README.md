@@ -233,15 +233,22 @@ The interactive viewer runs locally with `npm run dev` and is deployed at [nabab
 - **Dagre auto-layout** of the Bayesian network graph
 - **Scroll to pan**, **⌘/Ctrl+scroll or pinch to zoom** (drag and Fit View also work)
 - **Probability bars** on each node showing the current posterior distribution
-- **Click to cycle** through hard evidence states for any variable
+- **What-if hover preview**: hover an outcome bar (or its label) and the horizontal position picks a target of 0, 25, 50, 75 or 100% for that outcome (snap ticks appear on the bar). Every other node shows the posterior it *would* have: a marker at the new value, the gained part tinted green and the lost part red, a signed delta badge (e.g. `+12%`) for the largest change, and a halo whose strength follows the total variation distance of the node. Unaffected (d-separated) nodes dim. 100% is hard evidence, intermediate values are soft evidence via Jeffrey's rule (same semantics as the slider), 0% rules the outcome out. **Click commits exactly the previewed value**; drag a thumb for continuous values. Toggle with the *Preview* button; on touch, long-press a bar. Esc cancels.
+- **Explain** (toolbar): runs `mostProbableExplanation` / `kBestExplanations` (k=5) on the current evidence, marks each node's MPE outcome and lists the explanations with their log-probabilities; click one to highlight it
+- **Interventions (do-operator)**: Alt-click an outcome bar/label, or right-click a node, to set do(X = x) via graph surgery (`mutilateNetwork`). The node gets a distinct "do" style, its incoming edges are drawn dashed and faded, and inference, previews, VOI and sensitivity run on the mutilated network. Repeat the gesture to clear. Interventions are stored in the URL state like evidence.
+- **P(e)**: the probability of the observed evidence is shown in the header when evidence is set
+- **Click to cycle** through hard evidence states for any variable (click the name)
 - **Drag sliders** to set soft/likelihood evidence with continuous weights
 - **Eye toggle** to enable/disable observations per node
 - **Value-of-information and sensitivity panels** for the current selection
 - **CPT inspection** panel (click a node to view its conditional probability table)
+- **Keyboard**: `Esc` clears the preview, menus and selection, `Space` toggles the selected nodes' observations, `?` opens the interactions help
 - **Drag-and-drop** any `.xml`, `.xmlbif`, `.bif` or `.csv` file (CSV runs structure learning) to load a custom network
-- **URL state persistence** -- evidence, zoom, and layout are compressed into the URL hash
+- **URL state persistence** -- evidence, interventions, zoom, and layout are compressed into the URL hash
 - **17 built-in example networks** in the toolbar, plus 17 bnlearn benchmark models (up to 724 nodes) and 2 CSV datasets for structure learning
 - **Dark mode** support via `prefers-color-scheme`
+
+**Preview performance.** On entering an outcome the five snap targets of that outcome (and, when inference is fast, of the node's other outcomes) are queued in `PreviewComputer` (`src/viewer/preview-computer.ts`): one inference per macrotask, results cached by (network, interventions, evidence) key in an LRU, stale queue entries dropped when the pointer moves on. Networks whose full inference takes more than 40 ms run previews in a `WorkerInferenceEngine` so the UI thread is never blocked; if the exact snap is not ready after 150 ms the nearest computed snap is shown and a spinner appears in the hovered node. The preview only draws an overlay on the existing SVG (no re-render). Pure logic (snapping, evidence model, keys, deltas) lives in `evidence-model.ts` and `preview-logic.ts` and is unit-tested.
 
 ## MCP Server
 
