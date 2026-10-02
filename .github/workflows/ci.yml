@@ -28,3 +28,41 @@ jobs:
 
       - name: Audit (high and above)
         run: npm audit --audit-level=high
+
+      - name: Validate Worker bundle
+        run: npx wrangler deploy --dry-run
+
+  deploy:
+    # Every push to master that passes CI ships to nabab.ochafik.workers.dev.
+    needs: ci
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    environment:
+      name: production
+      url: https://nabab.ochafik.workers.dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build and deploy
+        run: npm run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Smoke test
+        run: |
+          curl -fsS -o /dev/null https://nabab.ochafik.workers.dev/
+          curl -fsS https://nabab.ochafik.workers.dev/mcp -X POST \
+            -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci-smoke","version":"0"}}}' \
+            | grep -q '"serverInfo"'
