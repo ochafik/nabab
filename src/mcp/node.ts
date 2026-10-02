@@ -21,7 +21,7 @@ async function startStdio() {
 
 async function startHttp() {
   // express/cors are devDependencies on purpose: they are only used by this
-  // local/dev HTTP mode (stdio and the Vercel/Workers deployments do not need
+  // local/dev HTTP mode (stdio and the Workers deployment do not need
   // them), and the published npm package ships only dist/lib.
   const { default: express } = await import('express');
   const { default: cors } = await import('cors');

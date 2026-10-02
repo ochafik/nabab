@@ -13,11 +13,12 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerAppTool, registerAppResource, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
 import { z } from 'zod';
 import { readFileSync, readdirSync } from 'fs';
-import { resolve, join } from 'path';
+import { resolve, join, basename } from 'path';
 import { randomUUID } from 'crypto';
 import { BayesianNetwork } from '../lib/network.js';
 import { toXmlBif } from '../lib/xmlbif-writer.js';
 import type { Evidence } from '../lib/types.js';
+import { validateEvidence } from '../lib/evidence.js';
 import type { CallToolResult, ReadResourceResult } from '@modelcontextprotocol/sdk/types.js';
 import { createQueue, type CommandQueue, type NetworkData } from './commands.js';
 
@@ -32,8 +33,6 @@ export interface McpAssets {
   listExamples(): string[];
   /** Read a bundled example by name; null when unknown. */
   readExample(name: string): string | null;
-  /** Fallback example when a name is not found. */
-  readLocalExample(): string | null;
   /** Built single-file MCP App viewer HTML; null when not built. */
   readMcpAppHtml(): string | null;
   /** Read a local file (file:// sources); null when unsupported. */
@@ -43,8 +42,8 @@ export interface McpAssets {
 function createNodeAssets(): McpAssets {
   const dirname = typeof import.meta.dirname === 'string' ? import.meta.dirname : '.';
   const mcpAppHtml = join(dirname, '../../dist/mcp/index.html');
-  const examplesDir = resolve(dirname, '../../../src/main/resources/com/ochafik/math/bayes');
-  const localExample = resolve(dirname, '../../src/example.xmlbif');
+  const examplesDir = resolve(dirname, '../examples');
+  const localExample = resolve(dirname, '../example.xmlbif');
   const read = (p: string): string | null => {
     try {
       return readFileSync(p, 'utf-8');
@@ -55,13 +54,18 @@ function createNodeAssets(): McpAssets {
   return {
     listExamples() {
       try {
-        return readdirSync(examplesDir).filter(f => f.endsWith('.xml') || f.endsWith('.xmlbif'));
+        const files = readdirSync(examplesDir).filter(f => f.endsWith('.xml') || f.endsWith('.xmlbif'));
+        return ['example.xmlbif', ...files];
       } catch {
-        return [];
+        return ['example.xmlbif'];
       }
     },
-    readExample: name => read(resolve(examplesDir, name)),
-    readLocalExample: () => read(localExample),
+    readExample(name) {
+      if (name === 'example.xmlbif') return read(localExample);
+      // Only plain file names from the examples directory (no path traversal).
+      if (name !== basename(name) || !/\.(xml|xmlbif)$/.test(name)) return null;
+      return read(resolve(examplesDir, name));
+    },
     readMcpAppHtml: () => read(mcpAppHtml),
     readFile: path => read(path),
   };
@@ -87,6 +91,21 @@ export function createServer(opts: CreateServerOptions = {}): McpServer {
   function ensureViewUUID(): string {
     if (!viewUUID) viewUUID = randomUUID();
     return viewUUID;
+  }
+
+  function unknownExample(name: string): CallToolResult {
+    const available = assets.listExamples();
+    return {
+      content: [{
+        type: 'text',
+        text: `No example found for "${name}". Available examples: ${available.length > 0 ? available.join(', ') : '(none)'}`,
+      }],
+      isError: true,
+    };
+  }
+
+  function errorResult(e: unknown): CallToolResult {
+    return { content: [{ type: 'text', text: e instanceof Error ? e.message : String(e) }], isError: true };
   }
 
   function buildQueryResult(varNames?: string[]): NetworkData | null {
@@ -166,10 +185,9 @@ export function createServer(opts: CreateServerOptions = {}): McpServer {
         if (source.includes('<BIF') || source.includes('<NETWORK')) {
           xmlbif = source;
         } else {
-          xmlbif = assets.readExample(source) ?? assets.readLocalExample() ?? '';
-          if (!xmlbif) {
-            return { content: [{ type: 'text', text: `No example found for "${source}".` }], isError: true };
-          }
+          const example = assets.readExample(source);
+          if (example == null) return unknownExample(source);
+          xmlbif = example;
         }
         currentNetwork = BayesianNetwork.fromXmlBif(xmlbif);
         currentXmlBif = xmlbif;
@@ -287,10 +305,9 @@ export function createServer(opts: CreateServerOptions = {}): McpServer {
         content = source;
       } else {
         // Try as example file name
-        content = assets.readExample(source) ?? assets.readLocalExample() ?? '';
-        if (!content) {
-          return { content: [{ type: 'text', text: `Unknown source: ${source}` }], isError: true };
-        }
+        const example = assets.readExample(source);
+        if (example == null) return unknownExample(source);
+        content = example;
       }
       try {
         currentNetwork = BayesianNetwork.parse(content);
@@ -305,14 +322,26 @@ export function createServer(opts: CreateServerOptions = {}): McpServer {
       return { content: [{ type: 'text', text: 'No network loaded. Provide a source (URL or inline content).' }], isError: true };
     }
 
-    // Apply evidence if provided
+    // Apply evidence if provided (validated before touching session state)
+    const previousEvidence = new Map(currentEvidence);
     if (ev) {
-      for (const [k, v] of Object.entries(ev)) {
-        currentEvidence.set(k, v);
+      const merged = new Map(currentEvidence);
+      for (const [k, v] of Object.entries(ev)) merged.set(k, v);
+      try {
+        validateEvidence(currentNetwork.variables, merged);
+      } catch (e) {
+        return errorResult(e);
       }
+      currentEvidence = merged;
     }
 
-    const structured = buildQueryResult(variables);
+    let structured: NetworkData | null;
+    try {
+      structured = buildQueryResult(variables);
+    } catch (e) {
+      currentEvidence = previousEvidence; // e.g. contradictory evidence
+      return errorResult(e);
+    }
     const xmlbif = currentXmlBif ?? toXmlBif(currentNetwork);
     return {
       content: [{ type: 'text', text: formatQueryText(structured) }],
@@ -338,6 +367,7 @@ export function createServer(opts: CreateServerOptions = {}): McpServer {
     },
     async ({ viewUUID: vUUID, action, variable, value, name }): Promise<CallToolResult> => {
       viewUUID = vUUID; // sync viewUUID
+      const previousEvidence = new Map(currentEvidence);
 
       switch (action) {
         case 'set_evidence': {
@@ -357,11 +387,10 @@ export function createServer(opts: CreateServerOptions = {}): McpServer {
         case 'load_example': {
           if (!name) return { content: [{ type: 'text' as const, text: 'Missing example name.' }], isError: true };
           try {
-            const xmlbif = assets.readExample(name) ?? assets.readLocalExample();
-            if (xmlbif == null) {
-              return { content: [{ type: 'text' as const, text: `No example found for "${name}".` }], isError: true };
-            }
+            const xmlbif = assets.readExample(name);
+            if (xmlbif == null) return unknownExample(name);
             currentNetwork = BayesianNetwork.fromXmlBif(xmlbif);
+            currentXmlBif = xmlbif;
             currentEvidence = new Map();
           } catch (e) {
             return { content: [{ type: 'text' as const, text: `Error: ${e}` }], isError: true };
@@ -370,7 +399,13 @@ export function createServer(opts: CreateServerOptions = {}): McpServer {
         }
       }
 
-      const structured = buildQueryResult();
+      let structured: NetworkData | null;
+      try {
+        structured = buildQueryResult();
+      } catch (e) {
+        currentEvidence = previousEvidence; // e.g. contradictory evidence
+        return errorResult(e);
+      }
       if (structured) {
         await queue.enqueue(vUUID, { type: 'update', data: structured });
       }

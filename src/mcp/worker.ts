@@ -36,7 +36,6 @@ interface Env {
 const assets: McpAssets = {
   listExamples: () => ['example.xmlbif'],
   readExample: name => (/^example(\.xmlbif)?$/i.test(name) ? exampleXmlbif : null),
-  readLocalExample: () => exampleXmlbif,
   readMcpAppHtml: () => appHtml,
   readFile: () => null, // no filesystem on Workers; file:// sources unsupported
 };
