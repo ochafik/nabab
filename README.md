@@ -24,7 +24,7 @@ Nabab is a pure TypeScript library for exact and approximate inference on discre
 - **DOM-free library** -- the inference engine uses regex-based XML parsing and has zero DOM dependencies; works in Node.js, Deno, Bun, Cloudflare Workers, or any browser
 - **MCP server** for Claude and other LLM tool-use integration, with an interactive MCP App viewer
 - **17 standard benchmark models** (Asia, Alarm, Sachs, Child, Insurance, Water, Hepar2, Hailfinder, Win95pts, Pathfinder, Barley, Mildew, Diabetes, Link, Pigs, Andes, Munin1)
-- **583 tests** across 33 test files covering factors, graphs, triangulation, inference, evidence validation, parsers, cross-validation, LBP, VE, cached inference, worker inference, the MCP server, and TensorFlow.js factor ops
+- **622 tests** across 34 test files covering factors, graphs, triangulation, inference, evidence validation, parsers, cross-validation, LBP, VE, cached inference, worker inference, the MCP server, and TensorFlow.js factor ops
 
 ### Stability
 
@@ -245,11 +245,11 @@ The interactive viewer runs locally with `npm run dev` and is deployed at [nabab
 
 ## MCP Server
 
-Nabab includes an MCP (Model Context Protocol) server that lets LLMs like Claude interact with Bayesian networks through tool calls. The `query` tool renders an interactive **MCP App** viewer in the client (streaming network loading, live evidence updates).
+Nabab includes an MCP (Model Context Protocol) server that lets an LLM **model** with Bayesian networks end to end: build a network from a compact JSON spec, query it, explain observations, decide what to observe next, probe parameter sensitivity, reason causally, and learn a network from CSV. The `query` tool renders an interactive **MCP App** viewer in the client.
 
 ### Connect
 
-Remote (recommended — deployed on Cloudflare Workers, sessions held in a Durable Object):
+Remote (recommended — deployed on Cloudflare Workers, one Durable Object per session):
 
 ```bash
 claude mcp add --transport http nabab https://nabab.ochafik.workers.dev/mcp
@@ -277,18 +277,49 @@ or in `claude_desktop_config.json`:
 
 A local HTTP mode is also available: `npm run mcp` (defaults to `http://localhost:3001/mcp`).
 
+### How the tools work
+
+Tools are **stateless with respect to evidence**: every call passes its full `evidence` (hard: `{"Smoking": "yes"}`) and, where supported, `softEvidence` (`{"Alarm": {"on": 0.8, "off": 0.2}}`). There is no hidden "current evidence".
+
+Every tool takes a `network`, which is any of:
+
+- a **handle** (`bn_…`, a content hash) returned by an earlier call (`build_network`, `learn_from_csv`, `describe_network`, `query`, …);
+- a **bundled example name** (`asia`, `alarm.xml`, `bench/insurance.bif`, … see `list_examples`; all the viewer's examples and bnlearn models are available);
+- an **http(s) URL** to an XMLBIF/BIF file (5 MB cap, 15 s timeout);
+- **inline** XMLBIF, BIF or nabab JSON text.
+
 ### Available MCP tools
 
 | Tool | Description |
 |------|-------------|
-| `list_examples` | List available example network files |
-| `load_network` | Load a network from XMLBIF content or example file name |
-| `set_evidence` | Set observed evidence for a variable |
-| `clear_evidence` | Clear all evidence or for a specific variable |
-| `query` | Query posterior distributions; renders the MCP App viewer |
-| `interact` | Set/clear evidence or load examples; pushes updates to the viewer |
-| `poll_commands` | Long-poll for server-to-viewer commands (viewer side) |
-| `get_network_info` | Get variables, parents, outcomes, and current evidence |
+| `build_network` | Build a network from a JSON spec (variables, outcomes, parents and CPTs given as explicit tables, conditional rules, noisy-OR, gated-logistic or temporal `hazardPrior`/`delays` templates). Validates thoroughly, reports every problem found, returns a handle, the structure and prior marginals |
+| `query` | Posterior probabilities for chosen or all variables, shown as change vs prior, plus P(evidence); renders the MCP App viewer. `method`: `exact` (default, guarded by a cost estimate), `sampling` (likelihood weighting) or `auto` |
+| `explain` | Most probable explanation, or the k best (MPE) |
+| `what_to_observe` | Value of information: which unobserved variable most reduces uncertainty about the target(s) |
+| `sensitivity` | Which CPT parameters most influence a query: exact derivatives or tornado sweep |
+| `intervene` | Pearl's do-operator, compared with plain observation, plus average causal effect |
+| `learn_from_csv` | Learn structure and parameters from categorical CSV text, URL or bundled dataset |
+| `describe_network` | Variables, outcomes, parents, inference cost, optionally CPTs |
+| `export_network` | Export as XMLBIF 0.3 or nabab JSON |
+| `list_examples` | The bundled networks and datasets |
+
+Exact inference is refused (with advice to use `method: "sampling"` or a smaller network) when the junction tree's largest clique would exceed the budget (`DEFAULT_MAX_CLIQUE_ENTRIES`, 32M entries; the Worker uses 4M).
+
+Example `build_network` spec:
+
+```json
+{"name": "Sprinkler", "variables": [
+  {"name": "Rain", "outcomes": ["yes", "no"], "cpt": [0.2, 0.8]},
+  {"name": "Sprinkler", "outcomes": ["on", "off"], "parents": ["Rain"],
+   "cpt": {"type": "conditional", "rows": [
+     {"when": {"Rain": "yes"}, "probs": {"on": 0.01, "off": 0.99}},
+     {"when": {"Rain": "no"},  "probs": {"on": 0.4,  "off": 0.6}}]}},
+  {"name": "WetGrass", "outcomes": ["wet", "dry"], "parents": ["Rain", "Sprinkler"],
+   "cpt": {"type": "noisyOr", "leak": 0, "weights": {"Rain": 0.9, "Sprinkler": 0.8},
+           "activeOutcomes": {"Rain": "yes", "Sprinkler": "on"}, "nullOutcome": "dry"}}]}
+```
+
+CPT kinds: a bare array/map (root prior or explicit table), `conditional` (first matching rule wins), `noisyOr`, `gatedLogistic` (gate, log-odds `shifts`, temporal `delays`), `hazardPrior` (temporal roots), `uniform`. Temporal variables are declared with `"temporal": {"outcomes": [...], "buckets": [...]}` and map onto `temporalVariable`, `hazardPrior`, `delayShifts`, `gatedLogisticCPT` and `noisyOrCPT` from the library.
 
 ## Deployment
 
@@ -304,7 +335,9 @@ Everything is deployed to Cloudflare Workers as a single Worker (`wrangler.jsonc
 npm run deploy   # builds the viewer + MCP App, then wrangler deploy
 ```
 
-Sessions and the server→viewer command queue live in a SQLite-backed Durable Object, so they survive Cloudflare's edge load balancing with no external store.
+**Sessions.** Each MCP session is hosted by its own SQLite-backed Durable Object (`idFromName(sessionId)`), so a heavy inference only blocks that session. On `initialize` the Worker mints the session id and routes to that object; later requests are routed by their `Mcp-Session-Id`. The object persists the client's `initialize` request and the source of every network handle in its storage. If the object is evicted, the next request transparently rebuilds the MCP transport by replaying the stored `initialize` under the same session id, and handles are rebuilt from storage (large sources over ~1.8 MB are kept in memory only; examples and URLs are stored by reference). Idle sessions are deleted after 24 hours by a Durable Object alarm; an unknown or expired session id gets a clean `404` so clients re-initialize.
+
+**Examples** are not bundled into the Worker script: the Worker reads them from the static-assets binding (`env.ASSETS`, the same `/examples/*` and `/bench/models/*` files the viewer fetches).
 
 ## Benchmark Results
 
@@ -377,12 +410,16 @@ src/viewer/             -- Interactive web viewer
   render-bus.ts         -- Late-bound render trigger (keeps modules acyclic)
 
 src/mcp/                -- MCP server for LLM integration
-  server.ts             -- Transport-agnostic server factory (tools, assets adapter)
-  node.ts               -- Node entry: stdio or express HTTP (`npm run mcp`)
-  worker.ts             -- Cloudflare Workers entry (Durable Object sessions)
-  commands.ts           -- Server→viewer command queue (in-memory)
+  server.ts             -- Transport-agnostic server factory (tool definitions)
+  analysis.ts           -- Analysis cores and text formatting behind the tools, cost guards
+  build-spec.ts         -- build_network: JSON spec -> validated BayesianNetwork
+  networks.ts           -- `network` references, handles, URL fetching, session store interface
+  examples.ts           -- Catalog of the viewer's examples / bnlearn models / datasets
+  node.ts, node-assets.ts -- Node entry: stdio or express HTTP (`npm run mcp`), filesystem assets
+  worker.ts             -- Cloudflare Workers entry: session routing, help page, assets binding
+  session-host.ts       -- One session inside a Durable Object: persistence and resume
 
-test/                   -- Vitest test suite (583 tests)
+test/                   -- Vitest test suite (622 tests)
 bench/                  -- Benchmark runner and 17 bnlearn models
   models/               -- .bif files (asia, alarm, sachs, child, etc.)
   run-bench.ts          -- Benchmark runner
