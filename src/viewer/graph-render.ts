@@ -376,10 +376,16 @@ export function renderGraph(net: BayesianNetwork, posteriors: Map<Variable, Dist
     const nameG = ng.append('g').attr('class', 'cz').attr('cursor', 'pointer')
       .attr('transform', `translate(${-w / 2 + 32},${ry})`)
       .on('click', (ev) => { ev.stopPropagation(); cycleObservation(v); });
-    nameG.append('rect').attr('x', -2).attr('y', -10).attr('width', w - 48).attr('height', 20).attr('fill', 'transparent');
+    const hitRect = nameG.append('rect').attr('x', -2).attr('y', -10).attr('width', w - 48).attr('height', 20).attr('fill', 'transparent');
     const nameColor = isDo ? 'var(--pv-do)' : isObs ? (isHard ? 'var(--accent-hard)' : 'var(--accent-soft)') : 'var(--text)';
     nameG.append('text').attr('y', 4).attr('font-size', '12px').attr('font-weight', '600').attr('fill', nameColor)
       .text(v.name + labelSuffix);
+    // Only the title text is clickable (cycle); the rest of the row is plain node background.
+    // Measured once at render time, never on hover/pointermove.
+    try {
+      const tw = (nameG.select('text').node() as SVGTextElement).getComputedTextLength();
+      if (tw > 0) hitRect.attr('width', Math.min(w - 48, tw + 6));
+    } catch { /* not measurable: keep full-row fallback */ }
 
     // ── Row 2: slider or bars ──
     if (dist) {
