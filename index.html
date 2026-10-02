@@ -255,10 +255,25 @@
     #explain-panel.visible { display: block; }
     #explain-panel .ex-title { font-weight: 700; padding: 2px 12px 6px; color: var(--pv-mpe); display: flex; justify-content: space-between; }
     #explain-panel .ex-title button { background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 14px; }
-    #explain-panel .ex-row { padding: 4px 12px; cursor: pointer; font-variant-numeric: tabular-nums; }
+    #explain-panel { width: 320px; }
+    #explain-panel .ex-sub { padding: 0 12px 6px; color: var(--text-secondary); font-size: 11px; }
+    #explain-panel .ex-all { white-space: nowrap; margin-left: 4px; cursor: pointer; }
+    #explain-panel .ex-list { max-height: 42vh; overflow-y: auto; border-top: 1px solid var(--border); }
+    #explain-panel .ex-row { padding: 5px 12px 6px; cursor: pointer; font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--border); }
     #explain-panel .ex-row:hover { background: var(--bg-bar); }
     #explain-panel .ex-row.sel { background: var(--bg-bar); box-shadow: inset 3px 0 0 var(--pv-mpe); }
+    #explain-panel .ex-head { display: flex; align-items: baseline; gap: 8px; }
+    #explain-panel .ex-pct { font-weight: 700; font-size: 13px; }
+    #explain-panel .ex-share { color: var(--text-secondary); font-size: 11px; flex: 1; }
+    #explain-panel .ex-apply { font-size: 11px; padding: 1px 8px; border: 1px solid var(--pv-mpe); color: var(--pv-mpe); background: none; border-radius: 10px; cursor: pointer; }
+    #explain-panel .ex-apply:hover { background: var(--pv-mpe); color: var(--bg); }
+    #explain-panel .ex-chips { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; max-height: 70px; overflow-y: auto; }
+    #explain-panel .ex-chip { font-size: 11px; padding: 0 6px; border-radius: 8px; background: var(--bg); border: 1px solid var(--border); color: var(--text-secondary); }
+    #explain-panel .ex-chip.hl { background: var(--pv-mpe); border-color: var(--pv-mpe); color: var(--bg); font-weight: 600; }
+    #explain-panel .ex-none { font-size: 11px; color: var(--text-secondary); font-style: italic; }
     #explain-panel .ex-status { padding: 4px 12px; color: var(--text-secondary); font-size: 11px; }
+    #explain-panel .ex-warn { color: var(--pv-loss-text); font-size: 12px; }
+    #btn-explain:disabled { opacity: 0.45; cursor: not-allowed; }
     /* Context menu + help overlay */
     #ctx-menu {
       display: none; position: fixed; z-index: 300; min-width: 160px; max-height: 60vh; overflow: auto;
@@ -347,7 +362,7 @@
     <button id="btn-layout">Auto Layout</button>
     <button id="btn-fit">Fit View</button>
     <button id="btn-clear-evidence">Clear Evidence</button>
-    <button id="btn-explain" title="Most probable explanation of the current evidence (top 5, marked on each node)">Explain</button>
+    <button id="btn-explain" title="Most likely scenario: the jointly most likely values of all unobserved variables given the evidence (top 5)">Scenarios</button>
     <button id="btn-preview" class="active" title="What-if preview: hover an outcome bar to see how the whole network would change">Preview</button>
     <button id="btn-sensitivity" title="Toggle sensitivity analysis: select a node to see which variables and parameters influence it most">Sensitivity</button>
     <span class="export-wrapper">
@@ -373,7 +388,7 @@
       <tr><td>Click a name</td><td>Cycle hard evidence through the outcomes, then clear</td></tr>
       <tr><td>Eye icon / <kbd>Space</kbd></td><td>Toggle observations on the node / the selected nodes</td></tr>
       <tr><td><kbd>Alt</kbd>-click a bar, or right-click a node</td><td>Intervene: do(X = outcome). Incoming edges are cut (dashed); repeat to clear. Previews and inference use the mutilated network.</td></tr>
-      <tr><td>Explain</td><td>Mark the most probable explanation of the evidence on every node; list the top 5 by log-probability</td></tr>
+      <tr><td>Scenarios</td><td>Most likely scenario: lists the 5 most probable full assignments of the unobserved variables given the evidence, with their probability. Badges mark nodes where the selected scenario differs from the node's own most likely value. Hover a row to preview it as hypothetical evidence; <b>Apply</b> commits it as hard evidence.</td></tr>
       <tr><td>Click a node, <kbd>Shift</kbd>-click</td><td>Select (value of information, CPT, sensitivity panels); extend the selection</td></tr>
       <tr><td>Scroll / <kbd>&#8984;</kbd>or<kbd>Ctrl</kbd>+scroll / pinch</td><td>Pan / zoom</td></tr>
       <tr><td>Long-press a bar (touch)</td><td>Preview; tap the bar to commit</td></tr>

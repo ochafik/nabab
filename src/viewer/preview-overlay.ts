@@ -226,3 +226,27 @@ function updateHint(m: OverlayModel, changed: number, biggest: NodeDelta | null)
   }
   if (!hint.classList.contains('visible')) hint.classList.add('visible');
 }
+
+/**
+ * Hypothetical-scenario preview: the same ghost markers as the what-if
+ * preview, for a whole batch of nodes at once (no source node, halos or
+ * veils). Draws into the same `#pv-layer` / `#pv-hint`; cleared by `clearOverlay`.
+ */
+export function drawScenarioPreview(deltas: ReadonlyMap<string, NodeDelta>, hintHtml: string): void {
+  const root = document.getElementById('pv-layer') as SVGGElement | null;
+  if (!root) return;
+  clearOverlay();
+  for (const [name, d] of deltas) {
+    const node = registry.get(name);
+    if (!node) continue;
+    const l = nodeLayer(root, node);
+    for (const bar of node.bars) ghost(l, bar, bar.val + (d.deltas.get(bar.outcome) ?? 0));
+  }
+  const hint = document.getElementById('pv-hint');
+  if (!hint) return;
+  hint.innerHTML = hintHtml;
+  lastHint = hintHtml;
+  hint.classList.remove('pv-left');
+  hint.classList.add('pv-right', 'visible');
+  side = 'right';
+}

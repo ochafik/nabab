@@ -128,6 +128,15 @@ export function observeHard(v: Variable, outcome: string): void {
   rerender();
 }
 
+/** Observe several variables with certainty in one go (single re-render). */
+export function observeAllHard(entries: Iterable<[Variable, string]>): void {
+  for (const [v, outcome] of entries) {
+    dropIntervention(v.name);
+    writeObs(v.name, hardObs(v, outcome));
+  }
+  rerender();
+}
+
 /** do(v = outcome); doing the same again clears it. Observations of v are removed. */
 export function toggleIntervention(v: Variable, outcome: string): void {
   if (S.interventions.get(v.name) === outcome) {
