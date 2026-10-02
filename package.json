@@ -25,6 +25,10 @@
     "test:watch": "vitest",
     "build:mcp": "vite build --config vite.config.mcp.ts",
     "mcp": "tsx src/mcp/node.ts",
+    "perf": "tsx bench/perf/run.ts",
+    "perf:baseline": "tsx bench/perf/run.ts --record",
+    "perf:page": "tsx bench/perf/page-perf.ts",
+    "perf:page:baseline": "tsx bench/perf/page-perf.ts --record",
     "deploy": "npm run build:viewer && npm run build:mcp && wrangler deploy"
   },
   "license": "MIT",
@@ -46,6 +50,7 @@
     "d3": "^7.9.0",
     "eslint": "^10.11.0",
     "express": "^5.2.1",
+    "playwright": "^1.63.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.71.0",

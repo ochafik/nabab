@@ -1,0 +1,49 @@
+name: Record perf baselines
+
+# Manual: measures on the CI runner hardware class and publishes the new timing
+# baselines (bench/perf/timings.json, page-timings.json) as an artifact and in the log.
+# Download the artifact, commit the files into bench/perf/, push. Counter baselines
+# (counters.json) are machine independent and are also regenerated here.
+on:
+  workflow_dispatch:
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Record library baselines
+        run: npm run perf:baseline
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - run: npm run build:viewer
+
+      - name: Record page baselines
+        run: npm run perf:page:baseline
+
+      - name: Print baselines
+        run: |
+          for f in counters timings page-timings; do
+            echo "::group::bench/perf/$f.json"
+            head -c 4000 bench/perf/$f.json
+            echo "::endgroup::"
+          done
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: perf-baselines
+          path: |
+            bench/perf/counters.json
+            bench/perf/timings.json
+            bench/perf/page-timings.json

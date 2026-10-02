@@ -12,3 +12,4 @@ build
 # Claude Code local state and agent worktrees
 .claude/worktrees/
 .claude/settings.local.json
+bench/perf/out

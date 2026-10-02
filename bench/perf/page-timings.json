@@ -1,0 +1,151 @@
+{
+ "version": 1,
+ "provisional": true,
+ "recordedAt": "2026-10-02T10:08:04.572Z",
+ "models": {
+  "dogproblem.xmlbif": {
+   "render": 29,
+   "task": 0
+  },
+  "alarm.xml": {
+   "render": 46,
+   "task": 0
+  },
+  "car-starts.xml": {
+   "render": 35,
+   "task": 0
+  },
+  "car-starts-light.xml": {
+   "render": 34,
+   "task": 0
+  },
+  "simple.xml": {
+   "render": 26,
+   "task": 0
+  },
+  "simple2.xml": {
+   "render": 26,
+   "task": 0
+  },
+  "example1.xml": {
+   "render": 39,
+   "task": 0
+  },
+  "example2.xml": {
+   "render": 41,
+   "task": 0
+  },
+  "example3.xml": {
+   "render": 40,
+   "task": 0
+  },
+  "example4.xml": {
+   "render": 38,
+   "task": 0
+  },
+  "example5.xml": {
+   "render": 39,
+   "task": 0
+  },
+  "example6.xml": {
+   "render": 41,
+   "task": 0
+  },
+  "example7.xml": {
+   "render": 39,
+   "task": 0
+  },
+  "example8.xml": {
+   "render": 39,
+   "task": 0
+  },
+  "example9.xml": {
+   "render": 38,
+   "task": 0
+  },
+  "example10.xml": {
+   "render": 39,
+   "task": 0
+  },
+  "Graph1.xml": {
+   "render": 115,
+   "task": 99
+  },
+  "bench/asia.bif": {
+   "render": 29,
+   "task": 0
+  },
+  "bench/sachs.bif": {
+   "render": 35,
+   "task": 0
+  },
+  "bench/child.bif": {
+   "render": 39,
+   "task": 0
+  },
+  "bench/insurance.bif": {
+   "render": 49,
+   "task": 0
+  },
+  "bench/water.bif": {
+   "render": 84,
+   "task": 66
+  },
+  "bench/mildew.bif": {
+   "render": 153,
+   "task": 129
+  },
+  "bench/alarm.bif": {
+   "render": 44,
+   "task": 0
+  },
+  "bench/barley.bif": {
+   "render": 247,
+   "task": 229
+  },
+  "bench/hailfinder.bif": {
+   "render": 60,
+   "task": 0
+  },
+  "bench/hepar2.bif": {
+   "render": 63,
+   "task": 0
+  },
+  "bench/win95pts.bif": {
+   "render": 56,
+   "task": 0
+  },
+  "bench/pathfinder.bif": {
+   "render": 121,
+   "task": 101
+  },
+  "bench/munin1.bif": {
+   "render": 113,
+   "task": 96
+  },
+  "bench/andes.bif": {
+   "render": 143,
+   "task": 126
+  },
+  "bench/diabetes.bif": {
+   "render": 960,
+   "task": 937
+  },
+  "bench/pigs.bif": {
+   "render": 263,
+   "task": 241
+  },
+  "bench/link.bif": {
+   "render": 634,
+   "task": 616
+  },
+  "bench/weather.csv": {
+   "render": 9,
+   "task": 0
+  },
+  "bench/students.csv": {
+   "render": 11,
+   "task": 0
+  }
+ }
+}

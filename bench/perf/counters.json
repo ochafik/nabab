@@ -1,0 +1,1172 @@
+{
+ "version": 1,
+ "models": {
+  "dogproblem.xmlbif": {
+   "parse": {
+    "variables": 5,
+    "cptEntries": 20
+   },
+   "cost": {
+    "treewidth": 2,
+    "maxCliqueEntries": 8,
+    "totalCliqueEntries": 22
+   },
+   "jt": {
+    "cliques": 3,
+    "maxCliqueEntries": 8,
+    "totalCliqueEntries": 16,
+    "separatorEntries": 4
+   },
+   "priors": {
+    "messages": 4,
+    "entries": 100
+   },
+   "evidence": {
+    "messages": 2,
+    "entries": 52
+   },
+   "retract": {
+    "messages": 2,
+    "entries": 48
+   },
+   "layout": {
+    "nodes": 5,
+    "edges": 4
+   }
+  },
+  "alarm.xml": {
+   "parse": {
+    "variables": 37,
+    "cptEntries": 752
+   },
+   "cost": {
+    "treewidth": 4,
+    "maxCliqueEntries": 144,
+    "totalCliqueEntries": 1288
+   },
+   "jt": {
+    "cliques": 27,
+    "maxCliqueEntries": 144,
+    "totalCliqueEntries": 1083,
+    "separatorEntries": 256
+   },
+   "priors": {
+    "messages": 52,
+    "entries": 7158
+   },
+   "evidence": {
+    "messages": 26,
+    "entries": 3352
+   },
+   "retract": {
+    "messages": 26,
+    "entries": 3325
+   },
+   "layout": {
+    "nodes": 37,
+    "edges": 46
+   }
+  },
+  "car-starts.xml": {
+   "parse": {
+    "variables": 18,
+    "cptEntries": 121
+   },
+   "cost": {
+    "treewidth": 4,
+    "maxCliqueEntries": 32,
+    "totalCliqueEntries": 166
+   },
+   "jt": {
+    "cliques": 8,
+    "maxCliqueEntries": 32,
+    "totalCliqueEntries": 100,
+    "separatorEntries": 14
+   },
+   "priors": {
+    "messages": 14,
+    "entries": 882
+   },
+   "evidence": {
+    "messages": 7,
+    "entries": 430
+   },
+   "retract": {
+    "messages": 7,
+    "entries": 426
+   },
+   "layout": {
+    "nodes": 18,
+    "edges": 17
+   }
+  },
+  "car-starts-light.xml": {
+   "parse": {
+    "variables": 18,
+    "cptEntries": 121
+   },
+   "cost": {
+    "treewidth": 4,
+    "maxCliqueEntries": 32,
+    "totalCliqueEntries": 166
+   },
+   "jt": {
+    "cliques": 8,
+    "maxCliqueEntries": 32,
+    "totalCliqueEntries": 100,
+    "separatorEntries": 14
+   },
+   "priors": {
+    "messages": 14,
+    "entries": 882
+   },
+   "evidence": {
+    "messages": 7,
+    "entries": 430
+   },
+   "retract": {
+    "messages": 7,
+    "entries": 426
+   },
+   "layout": {
+    "nodes": 18,
+    "edges": 17
+   }
+  },
+  "simple.xml": {
+   "parse": {
+    "variables": 2,
+    "cptEntries": 6
+   },
+   "cost": {
+    "treewidth": 1,
+    "maxCliqueEntries": 4,
+    "totalCliqueEntries": 6
+   },
+   "jt": {
+    "cliques": 1,
+    "maxCliqueEntries": 4,
+    "totalCliqueEntries": 4,
+    "separatorEntries": 0
+   },
+   "priors": {
+    "entries": 16
+   },
+   "evidence": {
+    "entries": 12
+   },
+   "retract": {
+    "entries": 8
+   },
+   "layout": {
+    "nodes": 2,
+    "edges": 1
+   }
+  },
+  "simple2.xml": {
+   "parse": {
+    "variables": 3,
+    "cptEntries": 10
+   },
+   "cost": {
+    "treewidth": 1,
+    "maxCliqueEntries": 4,
+    "totalCliqueEntries": 10
+   },
+   "jt": {
+    "cliques": 2,
+    "maxCliqueEntries": 4,
+    "totalCliqueEntries": 8,
+    "separatorEntries": 2
+   },
+   "priors": {
+    "messages": 2,
+    "entries": 40
+   },
+   "evidence": {
+    "messages": 1,
+    "entries": 24
+   },
+   "retract": {
+    "messages": 1,
+    "entries": 20
+   },
+   "layout": {
+    "nodes": 3,
+    "edges": 2
+   }
+  },
+  "example1.xml": {
+   "parse": {
+    "variables": 20,
+    "cptEntries": 609
+   },
+   "cost": {
+    "treewidth": 5,
+    "maxCliqueEntries": 810,
+    "totalCliqueEntries": 3317
+   },
+   "jt": {
+    "cliques": 15,
+    "maxCliqueEntries": 810,
+    "totalCliqueEntries": 2909,
+    "separatorEntries": 712
+   },
+   "priors": {
+    "messages": 28,
+    "entries": 18067
+   },
+   "evidence": {
+    "messages": 14,
+    "entries": 7997
+   },
+   "retract": {
+    "messages": 14,
+    "entries": 7987
+   },
+   "layout": {
+    "nodes": 20,
+    "edges": 28
+   }
+  },
+  "example2.xml": {
+   "parse": {
+    "variables": 20,
+    "cptEntries": 733
+   },
+   "cost": {
+    "treewidth": 5,
+    "maxCliqueEntries": 360,
+    "totalCliqueEntries": 2185
+   },
+   "jt": {
+    "cliques": 14,
+    "maxCliqueEntries": 360,
+    "totalCliqueEntries": 1969,
+    "separatorEntries": 436
+   },
+   "priors": {
+    "messages": 26,
+    "entries": 12791
+   },
+   "evidence": {
+    "messages": 13,
+    "entries": 6006
+   },
+   "retract": {
+    "messages": 13,
+    "entries": 5990
+   },
+   "layout": {
+    "nodes": 20,
+    "edges": 29
+   }
+  },
+  "example3.xml": {
+   "parse": {
+    "variables": 20,
+    "cptEntries": 554
+   },
+   "cost": {
+    "treewidth": 3,
+    "maxCliqueEntries": 500,
+    "totalCliqueEntries": 2635
+   },
+   "jt": {
+    "cliques": 17,
+    "maxCliqueEntries": 500,
+    "totalCliqueEntries": 2570,
+    "separatorEntries": 656
+   },
+   "priors": {
+    "messages": 32,
+    "entries": 14589
+   },
+   "evidence": {
+    "messages": 16,
+    "entries": 6497
+   },
+   "retract": {
+    "messages": 16,
+    "entries": 6461
+   },
+   "layout": {
+    "nodes": 20,
+    "edges": 26
+   }
+  },
+  "example4.xml": {
+   "parse": {
+    "variables": 20,
+    "cptEntries": 490
+   },
+   "cost": {
+    "treewidth": 4,
+    "maxCliqueEntries": 384,
+    "totalCliqueEntries": 2083
+   },
+   "jt": {
+    "cliques": 14,
+    "maxCliqueEntries": 384,
+    "totalCliqueEntries": 1847,
+    "separatorEntries": 449
+   },
+   "priors": {
+    "messages": 26,
+    "entries": 11479
+   },
+   "evidence": {
+    "messages": 13,
+    "entries": 5408
+   },
+   "retract": {
+    "messages": 13,
+    "entries": 5328
+   },
+   "layout": {
+    "nodes": 20,
+    "edges": 28
+   }
+  },
+  "example5.xml": {
+   "parse": {
+    "variables": 20,
+    "cptEntries": 766
+   },
+   "cost": {
+    "treewidth": 4,
+    "maxCliqueEntries": 1000,
+    "totalCliqueEntries": 5305
+   },
+   "jt": {
+    "cliques": 15,
+    "maxCliqueEntries": 1000,
+    "totalCliqueEntries": 4805,
+    "separatorEntries": 844
+   },
+   "priors": {
+    "messages": 28,
+    "entries": 28951
+   },
+   "evidence": {
+    "messages": 14,
+    "entries": 13551
+   },
+   "retract": {
+    "messages": 14,
+    "entries": 13541
+   },
+   "layout": {
+    "nodes": 20,
+    "edges": 26
+   }
+  },
+  "example6.xml": {
+   "parse": {
+    "variables": 20,
+    "cptEntries": 857
+   },
+   "cost": {
+    "treewidth": 4,
+    "maxCliqueEntries": 900,
+    "totalCliqueEntries": 4189
+   },
+   "jt": {
+    "cliques": 16,
+    "maxCliqueEntries": 900,
+    "totalCliqueEntries": 4060,
+    "separatorEntries": 1053
+   },
+   "priors": {
+    "messages": 30,
+    "entries": 24878
+   },
+   "evidence": {
+    "messages": 15,
+    "entries": 12167
+   },
+   "retract": {
+    "messages": 15,
+    "entries": 11987
+   },
+   "layout": {
+    "nodes": 20,
+    "edges": 28
+   }
+  },
+  "example7.xml": {
+   "parse": {
+    "variables": 20,
+    "cptEntries": 763
+   },
+   "cost": {
+    "treewidth": 4,
+    "maxCliqueEntries": 480,
+    "totalCliqueEntries": 2460
+   },
+   "jt": {
+    "cliques": 16,
+    "maxCliqueEntries": 480,
+    "totalCliqueEntries": 2307,
+    "separatorEntries": 576
+   },
+   "priors": {
+    "messages": 30,
+    "entries": 15124
+   },
+   "evidence": {
+    "messages": 15,
+    "entries": 7174
+   },
+   "retract": {
+    "messages": 15,
+    "entries": 7094
+   },
+   "layout": {
+    "nodes": 20,
+    "edges": 28
+   }
+  },
+  "example8.xml": {
+   "parse": {
+    "variables": 20,
+    "cptEntries": 721
+   },
+   "cost": {
+    "treewidth": 4,
+    "maxCliqueEntries": 360,
+    "totalCliqueEntries": 2156
+   },
+   "jt": {
+    "cliques": 14,
+    "maxCliqueEntries": 360,
+    "totalCliqueEntries": 1954,
+    "separatorEntries": 424
+   },
+   "priors": {
+    "messages": 26,
+    "entries": 12014
+   },
+   "evidence": {
+    "messages": 13,
+    "entries": 6020
+   },
+   "retract": {
+    "messages": 13,
+    "entries": 5828
+   },
+   "layout": {
+    "nodes": 20,
+    "edges": 26
+   }
+  },
+  "example9.xml": {
+   "parse": {
+    "variables": 20,
+    "cptEntries": 475
+   },
+   "cost": {
+    "treewidth": 3,
+    "maxCliqueEntries": 200,
+    "totalCliqueEntries": 913
+   },
+   "jt": {
+    "cliques": 15,
+    "maxCliqueEntries": 200,
+    "totalCliqueEntries": 817,
+    "separatorEntries": 177
+   },
+   "priors": {
+    "messages": 28,
+    "entries": 5262
+   },
+   "evidence": {
+    "messages": 14,
+    "entries": 2454
+   },
+   "retract": {
+    "messages": 14,
+    "entries": 2448
+   },
+   "layout": {
+    "nodes": 20,
+    "edges": 24
+   }
+  },
+  "example10.xml": {
+   "parse": {
+    "variables": 20,
+    "cptEntries": 441
+   },
+   "cost": {
+    "treewidth": 5,
+    "maxCliqueEntries": 3200,
+    "totalCliqueEntries": 7702
+   },
+   "jt": {
+    "cliques": 14,
+    "maxCliqueEntries": 3200,
+    "totalCliqueEntries": 6624,
+    "separatorEntries": 1105
+   },
+   "priors": {
+    "messages": 26,
+    "entries": 46834
+   },
+   "evidence": {
+    "messages": 13,
+    "entries": 22602
+   },
+   "retract": {
+    "messages": 13,
+    "entries": 22474
+   },
+   "layout": {
+    "nodes": 20,
+    "edges": 26
+   }
+  },
+  "Graph1.xml": {
+   "parse": {
+    "variables": 80,
+    "cptEntries": 1332
+   },
+   "cost": {
+    "treewidth": 33,
+    "maxCliqueEntries": 17179869184,
+    "totalCliqueEntries": 43315434686
+   },
+   "jt": {
+    "cliques": 46,
+    "maxCliqueEntries": 17179869184,
+    "totalCliqueEntries": 23988081856,
+    "separatorEntries": 2330364512
+   },
+   "priors": {
+    "overBudget": 1
+   },
+   "layout": {
+    "nodes": 80,
+    "edges": 191
+   }
+  },
+  "bench/asia.bif": {
+   "parse": {
+    "variables": 8,
+    "cptEntries": 36
+   },
+   "cost": {
+    "treewidth": 2,
+    "maxCliqueEntries": 8,
+    "totalCliqueEntries": 46
+   },
+   "jt": {
+    "cliques": 6,
+    "maxCliqueEntries": 8,
+    "totalCliqueEntries": 40,
+    "separatorEntries": 16
+   },
+   "priors": {
+    "messages": 10,
+    "entries": 244
+   },
+   "evidence": {
+    "messages": 5,
+    "entries": 124
+   },
+   "retract": {
+    "messages": 5,
+    "entries": 120
+   },
+   "layout": {
+    "nodes": 8,
+    "edges": 8
+   }
+  },
+  "bench/sachs.bif": {
+   "parse": {
+    "variables": 11,
+    "cptEntries": 267
+   },
+   "cost": {
+    "treewidth": 3,
+    "maxCliqueEntries": 81,
+    "totalCliqueEntries": 267
+   },
+   "jt": {
+    "cliques": 6,
+    "maxCliqueEntries": 81,
+    "totalCliqueEntries": 216,
+    "separatorEntries": 36
+   },
+   "priors": {
+    "messages": 8,
+    "entries": 1368
+   },
+   "evidence": {
+    "messages": 4,
+    "entries": 666
+   },
+   "retract": {
+    "messages": 4,
+    "entries": 639
+   },
+   "layout": {
+    "nodes": 11,
+    "edges": 17
+   }
+  },
+  "bench/child.bif": {
+   "parse": {
+    "variables": 20,
+    "cptEntries": 344
+   },
+   "cost": {
+    "treewidth": 3,
+    "maxCliqueEntries": 216,
+    "totalCliqueEntries": 672
+   },
+   "jt": {
+    "cliques": 17,
+    "maxCliqueEntries": 216,
+    "totalCliqueEntries": 642,
+    "separatorEntries": 159
+   },
+   "priors": {
+    "messages": 32,
+    "entries": 4044
+   },
+   "evidence": {
+    "messages": 16,
+    "entries": 1774
+   },
+   "retract": {
+    "messages": 16,
+    "entries": 1749
+   },
+   "layout": {
+    "nodes": 20,
+    "edges": 25
+   }
+  },
+  "bench/insurance.bif": {
+   "parse": {
+    "variables": 27,
+    "cptEntries": 1419
+   },
+   "cost": {
+    "treewidth": 7,
+    "maxCliqueEntries": 28800,
+    "totalCliqueEntries": 58202
+   },
+   "jt": {
+    "cliques": 18,
+    "maxCliqueEntries": 28800,
+    "totalCliqueEntries": 46872,
+    "separatorEntries": 5416
+   },
+   "priors": {
+    "messages": 34,
+    "entries": 432188
+   },
+   "evidence": {
+    "messages": 17,
+    "entries": 172040
+   },
+   "retract": {
+    "messages": 17,
+    "entries": 171976
+   },
+   "layout": {
+    "nodes": 27,
+    "edges": 52
+   }
+  },
+  "bench/water.bif": {
+   "parse": {
+    "variables": 32,
+    "cptEntries": 13484
+   },
+   "cost": {
+    "treewidth": 10,
+    "maxCliqueEntries": 1769472,
+    "totalCliqueEntries": 4540464
+   },
+   "jt": {
+    "cliques": 19,
+    "maxCliqueEntries": 1769472,
+    "totalCliqueEntries": 3657180,
+    "separatorEntries": 257928
+   },
+   "priors": {
+    "messages": 36,
+    "entries": 25975940
+   },
+   "evidence": {
+    "messages": 18,
+    "entries": 11020221
+   },
+   "retract": {
+    "messages": 18,
+    "entries": 11019965
+   },
+   "layout": {
+    "nodes": 32,
+    "edges": 66
+   }
+  },
+  "bench/mildew.bif": {
+   "parse": {
+    "variables": 35,
+    "cptEntries": 547158
+   },
+   "cost": {
+    "treewidth": 4,
+    "maxCliqueEntries": 1756800,
+    "totalCliqueEntries": 4523400
+   },
+   "jt": {
+    "cliques": 29,
+    "maxCliqueEntries": 1756800,
+    "totalCliqueEntries": 4433452,
+    "separatorEntries": 96619
+   },
+   "priors": {
+    "messages": 56,
+    "entries": 24760710
+   },
+   "evidence": {
+    "messages": 28,
+    "entries": 11465818
+   },
+   "retract": {
+    "messages": 28,
+    "entries": 11465482
+   },
+   "layout": {
+    "nodes": 35,
+    "edges": 46
+   }
+  },
+  "bench/alarm.bif": {
+   "parse": {
+    "variables": 37,
+    "cptEntries": 752
+   },
+   "cost": {
+    "treewidth": 4,
+    "maxCliqueEntries": 144,
+    "totalCliqueEntries": 1288
+   },
+   "jt": {
+    "cliques": 27,
+    "maxCliqueEntries": 144,
+    "totalCliqueEntries": 1083,
+    "separatorEntries": 256
+   },
+   "priors": {
+    "messages": 52,
+    "entries": 7158
+   },
+   "evidence": {
+    "messages": 26,
+    "entries": 3397
+   },
+   "retract": {
+    "messages": 26,
+    "entries": 3325
+   },
+   "layout": {
+    "nodes": 37,
+    "edges": 46
+   }
+  },
+  "bench/barley.bif": {
+   "parse": {
+    "variables": 48,
+    "cptEntries": 130180
+   },
+   "cost": {
+    "treewidth": 7,
+    "maxCliqueEntries": 13063680,
+    "totalCliqueEntries": 25828866
+   },
+   "jt": {
+    "cliques": 36,
+    "maxCliqueEntries": 13063680,
+    "totalCliqueEntries": 24655436,
+    "separatorEntries": 2082544
+   },
+   "priors": {
+    "messages": 70,
+    "entries": 203226871
+   },
+   "evidence": {
+    "messages": 35,
+    "entries": 88389181
+   },
+   "retract": {
+    "messages": 35,
+    "entries": 88388821
+   },
+   "layout": {
+    "nodes": 48,
+    "edges": 84
+   }
+  },
+  "bench/hailfinder.bif": {
+   "parse": {
+    "variables": 56,
+    "cptEntries": 3741
+   },
+   "cost": {
+    "treewidth": 4,
+    "maxCliqueEntries": 3267,
+    "totalCliqueEntries": 10915
+   },
+   "jt": {
+    "cliques": 43,
+    "maxCliqueEntries": 3267,
+    "totalCliqueEntries": 10138,
+    "separatorEntries": 1702
+   },
+   "priors": {
+    "messages": 84,
+    "entries": 60789
+   },
+   "evidence": {
+    "messages": 42,
+    "entries": 27981
+   },
+   "retract": {
+    "messages": 42,
+    "entries": 27783
+   },
+   "layout": {
+    "nodes": 56,
+    "edges": 66
+   }
+  },
+  "bench/hepar2.bif": {
+   "parse": {
+    "variables": 70,
+    "cptEntries": 2139
+   },
+   "cost": {
+    "treewidth": 6,
+    "maxCliqueEntries": 384,
+    "totalCliqueEntries": 3002
+   },
+   "jt": {
+    "cliques": 58,
+    "maxCliqueEntries": 384,
+    "totalCliqueEntries": 2617,
+    "separatorEntries": 688
+   },
+   "priors": {
+    "messages": 114,
+    "entries": 19453
+   },
+   "evidence": {
+    "messages": 57,
+    "entries": 9690
+   },
+   "retract": {
+    "messages": 57,
+    "entries": 9666
+   },
+   "layout": {
+    "nodes": 70,
+    "edges": 123
+   }
+  },
+  "bench/win95pts.bif": {
+   "parse": {
+    "variables": 76,
+    "cptEntries": 1148
+   },
+   "cost": {
+    "treewidth": 8,
+    "maxCliqueEntries": 512,
+    "totalCliqueEntries": 3610
+   },
+   "jt": {
+    "cliques": 50,
+    "maxCliqueEntries": 512,
+    "totalCliqueEntries": 2684,
+    "separatorEntries": 878
+   },
+   "priors": {
+    "messages": 98,
+    "entries": 19654
+   },
+   "evidence": {
+    "messages": 49,
+    "entries": 9642
+   },
+   "retract": {
+    "messages": 49,
+    "entries": 9626
+   },
+   "layout": {
+    "nodes": 76,
+    "edges": 112
+   }
+  },
+  "bench/pathfinder.bif": {
+   "parse": {
+    "variables": 109,
+    "cptEntries": 97851
+   },
+   "cost": {
+    "treewidth": 6,
+    "maxCliqueEntries": 32256,
+    "totalCliqueEntries": 205069
+   },
+   "jt": {
+    "cliques": 91,
+    "maxCliqueEntries": 32256,
+    "totalCliqueEntries": 182641,
+    "separatorEntries": 33140
+   },
+   "priors": {
+    "messages": 180,
+    "entries": 1229465
+   },
+   "evidence": {
+    "messages": 90,
+    "entries": 556365
+   },
+   "retract": {
+    "messages": 90,
+    "entries": 556176
+   },
+   "layout": {
+    "nodes": 109,
+    "edges": 195
+   }
+  },
+  "bench/munin1.bif": {
+   "parse": {
+    "variables": 186,
+    "cptEntries": 19226
+   },
+   "cost": {
+    "treewidth": 11,
+    "maxCliqueEntries": 274400000,
+    "totalCliqueEntries": 450263972
+   },
+   "jt": {
+    "cliques": 159,
+    "maxCliqueEntries": 274400000,
+    "totalCliqueEntries": 425286027,
+    "separatorEntries": 54161745
+   },
+   "priors": {
+    "overBudget": 1
+   },
+   "layout": {
+    "nodes": 186,
+    "edges": 273
+   }
+  },
+  "bench/andes.bif": {
+   "parse": {
+    "variables": 223,
+    "cptEntries": 2314
+   },
+   "cost": {
+    "treewidth": 17,
+    "maxCliqueEntries": 262144,
+    "totalCliqueEntries": 694144
+   },
+   "jt": {
+    "cliques": 178,
+    "maxCliqueEntries": 262144,
+    "totalCliqueEntries": 389854,
+    "separatorEntries": 42778
+   },
+   "priors": {
+    "messages": 348,
+    "entries": 2387448
+   },
+   "evidence": {
+    "messages": 174,
+    "entries": 1207914
+   },
+   "retract": {
+    "messages": 174,
+    "entries": 1207898
+   },
+   "layout": {
+    "nodes": 223,
+    "edges": 338
+   }
+  },
+  "bench/diabetes.bif": {
+   "parse": {
+    "variables": 413,
+    "cptEntries": 461069
+   },
+   "cost": {
+    "treewidth": 4,
+    "maxCliqueEntries": 154275,
+    "totalCliqueEntries": 13432818
+   },
+   "jt": {
+    "cliques": 337,
+    "maxCliqueEntries": 154275,
+    "totalCliqueEntries": 13029951,
+    "separatorEntries": 783435
+   },
+   "priors": {
+    "messages": 672,
+    "entries": 76284197
+   },
+   "evidence": {
+    "messages": 336,
+    "entries": 34835809
+   },
+   "retract": {
+    "messages": 336,
+    "entries": 34835314
+   },
+   "layout": {
+    "nodes": 413,
+    "edges": 602
+   }
+  },
+  "bench/pigs.bif": {
+   "parse": {
+    "variables": 441,
+    "cptEntries": 8427
+   },
+   "cost": {
+    "treewidth": 10,
+    "maxCliqueEntries": 177147,
+    "totalCliqueEntries": 877323
+   },
+   "jt": {
+    "cliques": 368,
+    "maxCliqueEntries": 177147,
+    "totalCliqueEntries": 709344,
+    "separatorEntries": 124461
+   },
+   "priors": {
+    "messages": 734,
+    "entries": 4880091
+   },
+   "evidence": {
+    "messages": 367,
+    "entries": 2494155
+   },
+   "retract": {
+    "messages": 367,
+    "entries": 2494128
+   },
+   "layout": {
+    "nodes": 441,
+    "edges": 592
+   }
+  },
+  "bench/link.bif": {
+   "parse": {
+    "variables": 724,
+    "cptEntries": 20502
+   },
+   "cost": {
+    "treewidth": 15,
+    "maxCliqueEntries": 16777216,
+    "totalCliqueEntries": 51735024
+   },
+   "jt": {
+    "cliques": 590,
+    "maxCliqueEntries": 16777216,
+    "totalCliqueEntries": 37612426,
+    "separatorEntries": 1240743
+   },
+   "priors": {
+    "messages": 1158,
+    "entries": 237639590
+   },
+   "evidence": {
+    "messages": 579,
+    "entries": 119376074
+   },
+   "retract": {
+    "messages": 579,
+    "entries": 119376062
+   },
+   "layout": {
+    "nodes": 724,
+    "edges": 1125
+   }
+  },
+  "bench/weather.csv": {
+   "parse": {
+    "variables": 5,
+    "cptEntries": 26
+   },
+   "cost": {
+    "treewidth": 2,
+    "maxCliqueEntries": 8,
+    "totalCliqueEntries": 26
+   },
+   "jt": {
+    "cliques": 3,
+    "maxCliqueEntries": 8,
+    "totalCliqueEntries": 20,
+    "separatorEntries": 4
+   },
+   "priors": {
+    "messages": 4,
+    "entries": 116
+   },
+   "evidence": {
+    "messages": 2,
+    "entries": 64
+   },
+   "retract": {
+    "messages": 2,
+    "entries": 56
+   },
+   "layout": {
+    "nodes": 5,
+    "edges": 4
+   }
+  },
+  "bench/students.csv": {
+   "parse": {
+    "variables": 5,
+    "cptEntries": 33
+   },
+   "cost": {
+    "treewidth": 1,
+    "maxCliqueEntries": 9,
+    "totalCliqueEntries": 33
+   },
+   "jt": {
+    "cliques": 4,
+    "maxCliqueEntries": 9,
+    "totalCliqueEntries": 30,
+    "separatorEntries": 9
+   },
+   "priors": {
+    "messages": 6,
+    "entries": 165
+   },
+   "evidence": {
+    "messages": 3,
+    "entries": 90
+   },
+   "retract": {
+    "messages": 3,
+    "entries": 81
+   },
+   "layout": {
+    "nodes": 5,
+    "edges": 4
+   }
+  }
+ }
+}

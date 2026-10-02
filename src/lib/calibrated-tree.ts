@@ -37,6 +37,7 @@ import {
   tableSize,
 } from './factor.js';
 import type { JunctionTree } from './graph.js';
+import { workCounters } from './work-counters.js';
 
 /** Per-variable likelihood vectors; only variables whose vector is not all ones appear. */
 export type Likelihoods = Map<Variable, Float64Array>;
@@ -413,12 +414,14 @@ export class CalibratedTree {
     const [e] = this._adjacent[from].find(([, n]) => n === to)!;
     const edge = this._edges[e];
     const [fromPlan, toPlan] = edge.a === from ? [edge.planA, edge.planB] : [edge.planB, edge.planA];
+    if (workCounters.enabled) workCounters.messages++;
     const message = edge.spare;
     message.fill(0);
     sumInto(this._potentials[from]!, fromPlan, message);
     if (edge.hasSep) {
       // ratio = new / old with 0/0 = 0, computed in place over the old separator.
       const ratio = edge.sep;
+      if (workCounters.enabled) workCounters.ratioEntries += ratio.length;
       for (let i = 0; i < ratio.length; i++) ratio[i] = ratio[i] === 0 ? 0 : message[i] / ratio[i];
       multiplyInto(this._potentials[to]!, toPlan, ratio);
       edge.spare = ratio;

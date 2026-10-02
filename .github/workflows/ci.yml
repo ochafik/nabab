@@ -32,9 +32,76 @@ jobs:
       - name: Validate Worker bundle
         run: npx wrangler deploy --dry-run
 
+  perf:
+    # Performance regression gate (deterministic work counters + calibrated timings). See README.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Library performance gate
+        run: npm run perf
+
+      - name: Upload measurements
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: perf-measurements
+          path: bench/perf/out/
+          if-no-files-found: ignore
+
+  page-perf:
+    # Real-browser load of every viewer model (headless Chromium). Parallel to ci and perf.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Chromium and system dependencies
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Install system dependencies only (browser cached)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - run: npm run build:viewer
+
+      - name: Page-load performance gate
+        run: npm run perf:page
+
+      - name: Upload measurements
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: page-perf-measurements
+          path: bench/perf/out/
+          if-no-files-found: ignore
+
   deploy:
     # Every push to master that passes CI ships to nabab.ochafik.workers.dev.
-    needs: ci
+    needs: [ci, perf, page-perf]
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     concurrency:

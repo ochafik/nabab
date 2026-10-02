@@ -11,6 +11,7 @@
  * - Fast paths for subset relationships and trailing-variable marginalization
  * - Specialized 2-variable factor paths
  */
+import { workCounters } from './work-counters.js';
 import type { Variable } from './types.js';
 
 export interface Factor {
@@ -505,6 +506,7 @@ export function sumRange(values: Float64Array, start: number, end: number): numb
 
 /** `out[map(i)] += src[i]` for every entry i of `src` (sums `src` down onto a smaller table). */
 export function sumInto(src: Float64Array, plan: LoopPlan, out: Float64Array): void {
+  if (workCounters.enabled) workCounters.sumEntries += src.length;
   const { cards, strides } = plan;
   const n = cards.length;
   if (n === 0) {
@@ -538,6 +540,7 @@ export function sumInto(src: Float64Array, plan: LoopPlan, out: Float64Array): v
 
 /** `dst[i] *= small[map(i)]` for every entry i of `dst` (multiplies a smaller table into `dst`). */
 export function multiplyInto(dst: Float64Array, plan: LoopPlan, small: Float64Array): void {
+  if (workCounters.enabled) workCounters.multiplyEntries += dst.length;
   const { cards, strides } = plan;
   const n = cards.length;
   if (n === 0) {

@@ -364,6 +364,55 @@ npm run deploy   # builds the viewer + MCP App, then wrangler deploy
 
 **Examples** are not bundled into the Worker script: the Worker reads them from the static-assets binding (`env.ASSETS`, the same `/examples/*` and `/bench/models/*` files the viewer fetches).
 
+## Performance regression gate
+
+Every push and PR runs two jobs in parallel with `ci`, and `deploy` waits for both: a regression blocks the deploy.
+
+**What is measured.** For every model in the viewer's dropdown (`index.html` is the source of truth: the `src/examples`
+networks, the bnlearn `.bif` models, the CSV samples), the work the viewer does to show the page (`bench/perf/ops.ts`):
+
+| op | what |
+|---|---|
+| `parse` | BIF/XMLBIF parse (CSV: parse + structure learning) |
+| `cost` | `estimateInferenceCost` (also what the viewer runs when inference is infeasible) |
+| `jt` | junction-tree build |
+| `priors` | `new CachedInferenceEngine(net).infer()`, the viewer's first render (over-budget networks: time to fail fast) |
+| `evidence` | one hard observation on the middle non-root node, on the warm engine |
+| `retract` | retract it |
+| `layout` | dagre layout with the viewer's settings |
+
+VOI and sensitivity run only after a node is selected or sensitivity mode is toggled, not on load, so they are not in the
+suite. If the viewer starts computing something else on load, add it to `bench/perf/ops.ts`.
+
+**`perf` job (`npm run perf`, about 20 s).**
+1. Deterministic work counters (strict). Clique/separator table sizes, number of messages, and table entries touched by the
+   `sumInto`/`multiplyInto`/ratio kernels (`src/lib/work-counters.ts`: one boolean test per kernel call when disabled).
+   Compared with `bench/perf/counters.json`: **+5% fails**; a drop of more than 5% prints a note to update the baseline so the
+   gain is locked in. A model or metric missing from the baseline also fails.
+2. Wall-clock (tolerant). Warmup, then at least 5 repeats until about 250 ms are spent (3 for models whose scenario takes
+   more than 0.8 s); median, min and MAD are recorded. Times are normalised by a fixed calibration micro-benchmark (the same
+   typed-array kernels plus parsing) run before and after: a model fails if
+   `median > baseline_median * (calibration_now / calibration_baseline) * 2.0 + 2 ms`. A failing model is re-measured once
+   with twice the repeats and only fails if it still fails. 2x is beyond what runner noise plus normalisation plausibly explains,
+   while the counters catch finer algorithmic changes; the 2 ms slack covers timer, GC and JIT jitter on sub-millisecond
+   operations. Raw and scaled baseline times are both in the table.
+
+**`page-perf` job (`npm run build:viewer && npm run perf:page`).** Headless Chromium (Playwright) loads every dropdown model
+cold from a static server on `dist/viewer` (3 runs, median; the hash URL for networks, the dropdown for CSVs). It records
+navigation start to the first frame with all nodes drawn, and the longest main-thread task. It also fails on page errors,
+missing nodes, fewer than 90% of nodes inside the viewport after the auto-fit (looser for diabetes and link, which hit the
+minimum zoom), and, for networks over the clique budget, a missing "structure only" message. Caps: render 3 s and longest
+task 1 s (looser for link, diabetes, pigs); plus `baseline * 2.5 + 300 ms` against `bench/perf/page-timings.json`.
+
+Both jobs write a model x op table to the job summary and upload their raw measurements (`bench/perf/out/*.current.json`) as artifacts.
+
+**Updating baselines.** `npm run perf:baseline` rewrites `bench/perf/counters.json` and `timings.json` (add `-- --provisional`
+to mark timings recorded off-CI: the timing gate then only warns); `npm run perf:page:baseline` rewrites `page-timings.json`.
+Counters are machine independent, so run the former locally when work legitimately changes and commit it. Timings must be
+recorded on the CI runner hardware class: run the manual workflow *Record perf baselines* (Actions tab), download the
+`perf-baselines` artifact (or take `perf-measurements` / `page-perf-measurements` from any CI run, they have the same format)
+and commit the files into `bench/perf/`. `npm run perf -- --models=alarm,link --no-retry` measures a subset.
+
 ## Benchmark Results
 
 Per-query latency on the standard bnlearn models (Apple Silicon, Node.js v26), measured by `bench/results/perf-bench.ts` on one long-lived `CachedInferenceEngine`, as the viewer uses it. Each model sees the same sequence of evidence changes (add three observations, repeat, switch one outcome, retract one, clear), with evidence taken from a seeded forward sample so it is always possible. Times are milliseconds per query, averaged over the sequence.
